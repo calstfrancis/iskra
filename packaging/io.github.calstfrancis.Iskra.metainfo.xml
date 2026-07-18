@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.calstfrancis.Iskra</id>
+  <name>Iskra</name>
+  <summary>Sermon planning for preachers who work from structured notes</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      Iskra (Искра, "spark") is a sermon-planning tool built around structured
+      notes rather than a full manuscript: jot single-line ideas, expand any of
+      them with longer notes, group them into movements, drag everything into
+      order, tag it, and export a clean outline for Rubric's sermon field.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Idea bars with click-to-edit text, expandable notes, and idea/part tags</li>
+      <li>Movements to group ideas, with drag-and-drop reordering within and between them</li>
+      <li>Continuous auto-numbering across the whole sermon</li>
+      <li>Revised Common Lectionary readings, season, and liturgical colour resolved from the planned date</li>
+      <li>Sermon library with search by title, tags, and date</li>
+      <li>Undo/redo covering every structural and text edit</li>
+      <li>Git sync — commit and push to all remotes in one click; sign in with GitHub via device flow</li>
+      <li>Export to a format Rubric imports directly into its sermon field</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.calstfrancis.Iskra.desktop</launchable>
+  <url type="homepage">https://github.com/calstfrancis/iskra</url>
+  <url type="bugtracker">https://github.com/calstfrancis/iskra/issues</url>
+  <developer_name>Cal St Francis</developer_name>
+  <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Planning a sermon's movements and ideas</caption>
+      <image>https://raw.githubusercontent.com/calstfrancis/iskra/main/screenshots/iskra-main.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <!-- No entries yet — added only at actual release time, never for a
+         dev build (AppStream has no pre-release ordering concept, so a
+         "-devN" entry sorts as newer than the eventual clean release). -->
+  </releases>
+</component>

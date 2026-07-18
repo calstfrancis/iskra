@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="spark" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e66100"/>
+      <stop offset="55%" stop-color="#f6a935"/>
+      <stop offset="100%" stop-color="#ffd76a"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#spark)" d="
+    M64 8
+    C 58 34, 44 44, 34 58
+    C 22 74, 22 96, 40 112
+    C 54 124, 76 124, 90 110
+    C 104 96, 104 74, 90 58
+    C 82 68, 76 74, 72 82
+    C 70 66, 74 50, 84 38
+    C 74 40, 66 28, 64 8
+    Z"/>
+</svg>

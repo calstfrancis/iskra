@@ -1,0 +1,22 @@
+# Rust / Cargo
+/target/
+.cargo/
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+\#*\#
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Flatpak build artifacts
+.flatpak-builder/
+build-flatpak/
+
+# Iskra user data (never commit these) — none of this belongs in the repo;
+# real sermons live under ~/Documents/Iskra/, not here.
+*.log
+config.toml

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Iskra
+GenericName=Sermon Planner
+Comment=Sermon planning for preachers who work from structured notes
+Exec=iskra %U
+Icon=iskra
+Type=Application
+Categories=Office;
+Keywords=sermon;preaching;lectionary;notes;
+StartupWMClass=Iskra
+StartupNotify=true
