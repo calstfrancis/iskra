@@ -118,7 +118,21 @@ impl Editor {
     }
 
     fn on_motion(self: &Rc<Self>, payload: &str, y: f64) {
-        dnd::autoscroll_if_near_edge(&self.scroller, y);
+        // `y` arrives in `self.column`'s own coordinate space (the widget
+        // the `DropTarget` is attached to), which grows far taller than the
+        // visible viewport as movements/ideas accumulate — comparing it
+        // directly against the scroller's viewport height made autoscroll
+        // trigger (and stay triggered) almost anywhere below the very top of
+        // the document, not just near the actual bottom edge, producing a
+        // runaway scroll-down on nearly every drag. Translate into the
+        // scroller's own coordinate space first so the edge check reflects
+        // where the pointer actually is relative to the visible viewport.
+        let scroller_y = self
+            .column
+            .translate_coordinates(&self.scroller, 0.0, y)
+            .map(|(_, ty)| ty)
+            .unwrap_or(y);
+        dnd::autoscroll_if_near_edge(&self.scroller, scroller_y);
         if payload.starts_with(dnd::IDEA_PAYLOAD_PREFIX) {
             match dnd::locate_drop_zone(&self.column, y) {
                 DropZone::InMovementIdeas { movement_index, local_y } => {

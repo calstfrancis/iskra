@@ -153,11 +153,27 @@ pub fn nth_movement_card(movements_column: &GtkBox, index: usize) -> Option<GtkB
 }
 
 /// A movement card's ideas box is identified by CSS class, not position,
-/// since a card's header row also lives in the same container.
+/// since a card's header row also lives in the same container. Searched as a
+/// *descendant*, not a direct child — the ideas box lives inside a
+/// `Revealer` (for collapse/expand), so a direct-children-only walk never
+/// finds it, and every drop onto an existing movement's ideas silently
+/// failed (`on_drop` treats "no ideas box" as "reject the drop").
 pub fn movement_ideas_box(card: &GtkBox) -> Option<GtkBox> {
-    std::iter::successors(card.first_child(), |w| w.next_sibling())
-        .find(|w| w.css_classes().iter().any(|c| c == "movement-ideas-box"))
-        .and_then(|w| w.downcast::<GtkBox>().ok())
+    find_by_class(card.clone().upcast(), "movement-ideas-box").and_then(|w| w.downcast::<GtkBox>().ok())
+}
+
+fn find_by_class(root: gtk4::Widget, class: &str) -> Option<gtk4::Widget> {
+    if root.css_classes().iter().any(|c| c == class) {
+        return Some(root);
+    }
+    let mut child = root.first_child();
+    while let Some(w) = child {
+        if let Some(found) = find_by_class(w.clone(), class) {
+            return Some(found);
+        }
+        child = w.next_sibling();
+    }
+    None
 }
 
 pub fn place_idea_indicator(indicator: &GtkBox, movements_column: &GtkBox, movement_index: usize, local_y: f64) {
