@@ -23,6 +23,8 @@ pub struct Config {
     pub theme: Theme,
     #[serde(default = "default_true")]
     pub sidebar_visible: bool,
+    #[serde(default = "default_sidebar_width_fraction")]
+    pub sidebar_width_fraction: f64,
     #[serde(default = "default_window_width")]
     pub window_width: i32,
     #[serde(default = "default_window_height")]
@@ -44,6 +46,9 @@ fn default_work_dir() -> PathBuf {
 fn default_true() -> bool {
     true
 }
+fn default_sidebar_width_fraction() -> f64 {
+    0.22
+}
 fn default_window_width() -> i32 {
     1200
 }
@@ -60,6 +65,7 @@ impl Default for Config {
             work_dir: default_work_dir(),
             theme: Theme::default(),
             sidebar_visible: true,
+            sidebar_width_fraction: default_sidebar_width_fraction(),
             window_width: default_window_width(),
             window_height: default_window_height(),
             window_maximized: false,

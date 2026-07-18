@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Label, Orientation};
+use gtk4::Button;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -12,9 +12,13 @@ use crate::config::Config;
 use crate::model::Sermon;
 use crate::state::AppState;
 use crate::storage;
+use crate::ui::changelog_window::show_changelog;
 use crate::ui::editor::{ApplyFn, Editor};
+use crate::ui::lectionary_panel::LectionaryPanel;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::styles;
+use crate::ui::title_date_popover::TitleDatePopover;
+use crate::ui::welcome_window::WelcomeWindow;
 
 pub struct AppWindow {
     window: adw::ApplicationWindow,
@@ -48,11 +52,8 @@ impl AppWindow {
         library_btn.set_sensitive(false);
         header.pack_start(&library_btn);
 
-        let title_widget = adw::WindowTitle::new(
-            state.borrow().sermon.display_title(),
-            &planned_date_subtitle(&state.borrow().sermon),
-        );
-        header.set_title_widget(Some(&title_widget));
+        let title_date = TitleDatePopover::new(&state.borrow().sermon);
+        header.set_title_widget(Some(&title_date.button));
 
         let menu_btn = Button::from_icon_name("open-menu-symbolic");
         menu_btn.add_css_class("flat");
@@ -71,28 +72,18 @@ impl AppWindow {
         redo_btn.set_sensitive(false);
         header.pack_end(&redo_btn);
 
-        // ── Sidebar (empty for now — see Plans/plan.md §4.5) ─────────────
-        let sidebar_placeholder = GtkBox::new(Orientation::Vertical, 0);
-        let sidebar_header = Label::new(Some("Lectionary"));
-        sidebar_header.add_css_class("sidebar-header");
-        sidebar_header.set_xalign(0.0);
-        sidebar_placeholder.append(&sidebar_header);
-        let sidebar_note = Label::new(Some("Readings appear here once a date is planned."));
-        sidebar_note.add_css_class("dim-label");
-        sidebar_note.add_css_class("caption");
-        sidebar_note.set_wrap(true);
-        sidebar_note.set_margin_start(12);
-        sidebar_note.set_margin_end(12);
-        sidebar_placeholder.append(&sidebar_note);
+        // ── Sidebar: lectionary panel ─────────────────────────────────────
+        let lectionary_panel = LectionaryPanel::new();
+        lectionary_panel.refresh(&state.borrow().sermon);
 
         // ── Editor ────────────────────────────────────────────────────────
         let editor = Editor::new();
 
         let split_view = adw::OverlaySplitView::new();
-        split_view.set_sidebar(Some(&sidebar_placeholder));
+        split_view.set_sidebar(Some(&lectionary_panel.root));
         split_view.set_content(Some(editor.widget()));
         split_view.set_show_sidebar(state.borrow().config.sidebar_visible);
-        split_view.set_sidebar_width_fraction(0.22);
+        split_view.set_sidebar_width_fraction(state.borrow().config.sidebar_width_fraction);
 
         let toast_overlay = adw::ToastOverlay::new();
         toast_overlay.set_child(Some(&split_view));
@@ -113,12 +104,17 @@ impl AppWindow {
             &editor,
             &undo_btn,
             &redo_btn,
-            &title_widget,
+            &title_date,
+            &lectionary_panel,
+            &status_bar,
             &autosave_pending,
         );
 
         editor.init_dnd(&state, apply.clone());
         editor.rebuild(&state, apply.clone());
+        title_date.init(&state, apply.clone());
+        status_bar.init(apply.clone());
+        status_bar.refresh(&state.borrow().sermon);
 
         {
             let state = state.clone();
@@ -154,7 +150,9 @@ impl AppWindow {
             let editor = editor.clone();
             let undo_btn = undo_btn.clone();
             let redo_btn = redo_btn.clone();
-            let title_widget = title_widget.clone();
+            let title_date = title_date.clone();
+            let lectionary_panel = lectionary_panel.clone();
+            let status_bar = status_bar.clone();
             let autosave_pending = autosave_pending.clone();
             REFRESH.with(|cell| {
                 *cell.borrow_mut() = Some(Box::new(move || {
@@ -163,12 +161,15 @@ impl AppWindow {
                         &editor,
                         &undo_btn,
                         &redo_btn,
-                        &title_widget,
+                        &title_date,
+                        &lectionary_panel,
+                        &status_bar,
                         &autosave_pending,
                     );
                     editor.rebuild(&state, recurse);
-                    title_widget.set_title(state.borrow().sermon.display_title());
-                    title_widget.set_subtitle(&planned_date_subtitle(&state.borrow().sermon));
+                    title_date.refresh(&state.borrow().sermon);
+                    lectionary_panel.refresh(&state.borrow().sermon);
+                    status_bar.refresh(&state.borrow().sermon);
                     undo_btn.set_sensitive(state.borrow().undo.can_undo());
                     redo_btn.set_sensitive(state.borrow().undo.can_redo());
                     arm_autosave(&state, &autosave_pending);
@@ -216,6 +217,93 @@ impl AppWindow {
         }
         window.add_controller(key_ctl);
 
+        // ── Version button → changelog ────────────────────────────────────
+        {
+            let window = window.clone();
+            status_bar.version_btn.connect_clicked(move |_| {
+                show_changelog(&window);
+            });
+        }
+
+        // ── Welcome / What's New ─────────────────────────────────────────
+        if WelcomeWindow::should_show() {
+            let is_first_run = WelcomeWindow::is_first_run();
+            let welcome = WelcomeWindow::new(&window, is_first_run);
+            welcome.set_on_dismissed(WelcomeWindow::mark_shown);
+            welcome.present();
+        }
+
+        // ── Geometry + sidebar persistence (debounced 400 ms; ready-gated so
+        // GTK's initial layout pass — which fires these same notify signals
+        // once on realize — doesn't get saved as if the user had resized).
+        let geometry_ready = Rc::new(Cell::new(false));
+        {
+            let ready = geometry_ready.clone();
+            window.connect_realize(move |_| {
+                let ready = ready.clone();
+                glib::idle_add_local_once(move || ready.set(true));
+            });
+        }
+        let geometry_save_pending: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
+        {
+            let state = state.clone();
+            let ready = geometry_ready.clone();
+            let pending = geometry_save_pending.clone();
+            window.connect_default_width_notify(move |w| {
+                if !ready.get() || w.is_maximized() {
+                    return;
+                }
+                state.borrow_mut().config.window_width = w.default_width();
+                arm_config_save(&state, &pending);
+            });
+        }
+        {
+            let state = state.clone();
+            let ready = geometry_ready.clone();
+            let pending = geometry_save_pending.clone();
+            window.connect_default_height_notify(move |w| {
+                if !ready.get() || w.is_maximized() {
+                    return;
+                }
+                state.borrow_mut().config.window_height = w.default_height();
+                arm_config_save(&state, &pending);
+            });
+        }
+        {
+            let state = state.clone();
+            let ready = geometry_ready.clone();
+            window.connect_maximized_notify(move |w| {
+                if !ready.get() {
+                    return;
+                }
+                state.borrow_mut().config.window_maximized = w.is_maximized();
+                let _ = state.borrow().config.save();
+            });
+        }
+        {
+            let state = state.clone();
+            let ready = geometry_ready.clone();
+            let pending = geometry_save_pending.clone();
+            split_view.connect_sidebar_width_fraction_notify(move |sv| {
+                if !ready.get() {
+                    return;
+                }
+                state.borrow_mut().config.sidebar_width_fraction = sv.sidebar_width_fraction();
+                arm_config_save(&state, &pending);
+            });
+        }
+        {
+            let state = state.clone();
+            let ready = geometry_ready.clone();
+            split_view.connect_show_sidebar_notify(move |sv| {
+                if !ready.get() {
+                    return;
+                }
+                state.borrow_mut().config.sidebar_visible = sv.shows_sidebar();
+                let _ = state.borrow().config.save();
+            });
+        }
+
         // ── Save on close ─────────────────────────────────────────────────
         {
             let state = state.clone();
@@ -262,14 +350,18 @@ fn make_apply(
     editor: &Rc<Editor>,
     undo_btn: &Button,
     redo_btn: &Button,
-    title_widget: &adw::WindowTitle,
+    title_date: &Rc<TitleDatePopover>,
+    lectionary_panel: &Rc<LectionaryPanel>,
+    status_bar: &Rc<StatusBar>,
     autosave_pending: &Rc<Cell<Option<glib::SourceId>>>,
 ) -> ApplyFn {
     let state = state.clone();
     let editor = editor.clone();
     let undo_btn = undo_btn.clone();
     let redo_btn = redo_btn.clone();
-    let title_widget = title_widget.clone();
+    let title_date = title_date.clone();
+    let lectionary_panel = lectionary_panel.clone();
+    let status_bar = status_bar.clone();
     let autosave_pending = autosave_pending.clone();
     Rc::new(move |cmd: Cmd| {
         let structural = cmd.is_structural();
@@ -285,13 +377,16 @@ fn make_apply(
                 &editor,
                 &undo_btn,
                 &redo_btn,
-                &title_widget,
+                &title_date,
+                &lectionary_panel,
+                &status_bar,
                 &autosave_pending,
             );
             editor.rebuild(&state, recurse);
         }
-        title_widget.set_title(state.borrow().sermon.display_title());
-        title_widget.set_subtitle(&planned_date_subtitle(&state.borrow().sermon));
+        title_date.refresh(&state.borrow().sermon);
+        lectionary_panel.refresh(&state.borrow().sermon);
+        status_bar.refresh(&state.borrow().sermon);
         undo_btn.set_sensitive(state.borrow().undo.can_undo());
         redo_btn.set_sensitive(state.borrow().undo.can_redo());
         arm_autosave(&state, &autosave_pending);
@@ -318,11 +413,15 @@ fn arm_autosave(state: &Rc<RefCell<AppState>>, pending: &Rc<Cell<Option<glib::So
     pending.set(Some(id));
 }
 
-fn planned_date_subtitle(sermon: &Sermon) -> String {
-    match sermon.planned_date {
-        Some(d) => d.format("%B %-d, %Y").to_string(),
-        None => "No date planned".to_string(),
+fn arm_config_save(state: &Rc<RefCell<AppState>>, pending: &Rc<Cell<Option<glib::SourceId>>>) {
+    if let Some(id) = pending.take() {
+        id.remove();
     }
+    let state = state.clone();
+    let id = glib::timeout_add_local_once(Duration::from_millis(400), move || {
+        let _ = state.borrow().config.save();
+    });
+    pending.set(Some(id));
 }
 
 fn load_or_create_sermon(config: &Config) -> (Sermon, std::path::PathBuf) {

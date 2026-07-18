@@ -88,7 +88,32 @@ const GLOBAL_CSS: &str = ".paned > separator { \
     .idea-grabber:hover, \
     .movement-grabber:hover { \
         opacity: 0.9; \
-    }";
+    } \
+    .season-dot { \
+        min-width: 9px; \
+        min-height: 9px; \
+        border-radius: 5px; \
+        margin-top: 1px; \
+    } \
+    .season-dot-6b21a8 { background-color: #6B21A8; } \
+    .season-dot-b45309 { background-color: #B45309; } \
+    .season-dot-15803d { background-color: #15803D; } \
+    .season-dot-b91c1c { background-color: #B91C1C; } \
+    .season-dot-111827 { background-color: #111827; }";
+
+/// The RCL colour hexes (`rcl::COLOURS`) are a fixed liturgical palette, not
+/// theme colours, so they're pre-registered here as static classes rather
+/// than resolved at runtime like `ui::theme`'s named-colour lookups.
+pub fn season_dot_class(hex: &str) -> &'static str {
+    match hex {
+        "#6B21A8" => "season-dot-6b21a8",
+        "#B45309" => "season-dot-b45309",
+        "#15803D" => "season-dot-15803d",
+        "#B91C1C" => "season-dot-b91c1c",
+        "#111827" => "season-dot-111827",
+        _ => "season-dot-15803d",
+    }
+}
 
 /// Loads all static, app-wide CSS once. Safe to call multiple times (GTK
 /// dedupes identical providers by reference).

@@ -1,9 +1,13 @@
 pub mod app_window;
+pub mod changelog_window;
 pub mod dnd;
 pub mod editor;
 pub mod idea_row;
+pub mod lectionary_panel;
 pub mod movement_card;
 pub mod status_bar;
 pub mod styles;
 pub mod tag_popover;
 pub mod theme;
+pub mod title_date_popover;
+pub mod welcome_window;

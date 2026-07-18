@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.0-dev3] — Header, lectionary & tags
+
+### Added
+- Title/date popover in the header: click the sermon title to rename it and pick a planned date from a calendar; picking a date resolves the Revised Common Lectionary reading for that Sunday as one undo step.
+- `rcl` module: a from-scratch Rust port of Rubric's lectionary engine (readings table, Easter/Advent/Proper calendar math), so Iskra resolves the same season, colour, and readings as Rubric for any given date.
+- Lectionary sidebar panel: season name, colour swatch, week label, and the day's OT/Psalm/Epistle/Gospel readings, with an empty state before a date is planned.
+- Status bar: scripture (`s.`) and theme (`t.`) tag chips, addable and removable, for tagging a sermon's scripture references and themes.
+- Changelog window, opened from the version button in the status bar, rendering this file live.
+- Welcome window on first run, and a "What's New" window after an update.
+- Window geometry, sidebar width, and sidebar visibility now persist across launches (debounced, ignoring GTK's initial layout pass).
+
 ## [0.1.0-dev2] — Movements & drag-and-drop
 
 ### Added
