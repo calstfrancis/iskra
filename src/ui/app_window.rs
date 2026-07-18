@@ -73,6 +73,9 @@ impl AppWindow {
         menu_box.set_margin_end(6);
         let export_item = make_menu_item("Export…", "Ctrl+E");
         menu_box.append(&export_item);
+        let show_folder_item = make_menu_item("Show Sermons Folder", "");
+        show_folder_item.set_tooltip_text(Some(&state.borrow().config.sermons_dir().display().to_string()));
+        menu_box.append(&show_folder_item);
         let backup_setup_item = make_menu_item("Set Up Backup…", "");
         menu_box.append(&backup_setup_item);
         let menu_popover = gtk4::Popover::new();
@@ -277,6 +280,26 @@ impl AppWindow {
                 glib::Propagation::Proceed
             });
             window.add_controller(ctl);
+        }
+
+        // ── Hamburger menu: Show Sermons Folder ───────────────────────────
+        {
+            let state = state.clone();
+            let menu_popover = menu_popover.clone();
+            let toast_overlay = toast_overlay.clone();
+            show_folder_item.connect_clicked(move |_| {
+                menu_popover.popdown();
+                let dir = state.borrow().config.sermons_dir();
+                let uri = format!("file://{}", dir.display());
+                if gtk4::gio::AppInfo::launch_default_for_uri(
+                    &uri,
+                    None::<&gtk4::gio::AppLaunchContext>,
+                )
+                .is_err()
+                {
+                    show_toast(&toast_overlay, &format!("Sermons are saved in {}", dir.display()));
+                }
+            });
         }
 
         // ── Hamburger menu: Set Up Backup… ────────────────────────────────
@@ -815,7 +838,11 @@ fn show_sync_result(window: &adw::ApplicationWindow, overlay: &adw::ToastOverlay
             );
             return;
         }
-        let is_conflict = detail.contains("CONFLICT") || detail.contains("Pull failed");
+        // Matches only git's own "CONFLICT (...)" marker — not a substring
+        // of our own wrapper text, which previously made every pull failure
+        // (auth, network, missing branch, ...) get misreported as a merge
+        // conflict.
+        let is_conflict = detail.contains("CONFLICT");
         if result.pushed {
             let summary = result.commit_message.lines().next().unwrap_or("Synced").to_string();
             show_toast(overlay, &format!("Synced — {summary}"));
@@ -823,11 +850,15 @@ fn show_sync_result(window: &adw::ApplicationWindow, overlay: &adw::ToastOverlay
         } else if is_conflict {
             show_alert(
                 window,
-                "Merge conflict — sync aborted",
-                "Remote changes conflict with your local edits. Your work is safe and unchanged.\n\nResolve the conflict by editing the file manually or force-pushing from the command line.",
+                "Merge conflict — sync paused",
+                "A sermon changed on GitHub in a way that conflicts with a change made here. \
+                 Nothing was lost — your local copy is unchanged, and autosave keeps working \
+                 normally. Iskra will keep retrying on every sync until the conflict is \
+                 resolved on GitHub.com (or by someone comfortable with git from the command \
+                 line, in the folder under Menu → Show Sermons Folder).",
             );
         } else {
-            show_alert(window, "Push Failed", &detail);
+            show_alert(window, "Sync Failed", &detail);
         }
         return;
     }

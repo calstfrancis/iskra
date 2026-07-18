@@ -40,6 +40,7 @@ pub fn build_idea_row(
     on_part_tag_changed: impl Fn(String) + 'static,
     on_field_focus_out: impl Fn() + 'static,
     on_delete: impl Fn() + 'static,
+    on_enter: impl Fn() + 'static,
 ) -> IdeaRowWidgets {
     let root = GtkBox::new(Orientation::Vertical, 2);
     root.add_css_class("idea-row");
@@ -117,12 +118,11 @@ pub fn build_idea_row(
         });
     }
 
-    // Tag tabs — two coloured tabs hanging below the bar (idea tag / part
-    // tag), distinguished by colour rather than just label.
+    // Tag tabs — two coloured tabs hanging below the bar's right edge (idea
+    // tag / part tag), distinguished by colour rather than just label.
     let tags_row = GtkBox::new(Orientation::Horizontal, 3);
-    // Matches notes_view's margin_start so both line up under the bar.
-    tags_row.set_margin_start(40);
-    tags_row.set_halign(Align::Start);
+    tags_row.set_margin_end(10);
+    tags_row.set_halign(Align::End);
 
     let idea_tag_popover = TagPopover::new("Idea tag…");
     idea_tag_popover.set_text(&idea.idea_tag);
@@ -160,6 +160,7 @@ pub fn build_idea_row(
 
     // Wiring
     entry.connect_changed(move |e| on_text_changed(e.text().to_string()));
+    entry.connect_activate(move |_| on_enter());
     {
         let focus_ctl = gtk4::EventControllerFocus::new();
         focus_ctl.connect_leave(move |_| on_field_focus_out());

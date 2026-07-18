@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.0-dev8] — Fast entry, drag fixes, sync robustness
+
+### Added
+- Clicking "+ Add idea" (or pressing Enter at the end of an idea) now focuses the new idea's text field immediately, instead of leaving focus on the movement name — lets you add a string of ideas without touching the mouse.
+- "Show Sermons Folder" in the hamburger menu opens `work_dir/sermons/` in the system file manager, so it's no longer a mystery where sermons are saved.
+
+### Fixed
+- Dragging an idea onto a movement's header/name (not just its ideas list) used to create a brand-new movement instead of adding the idea to the one you dropped it on — the drop-zone math only treated the ideas list as "this movement," so drops on the header fell through to blank-space handling.
+- Dragging an idea over an Entry (idea text, movement name, tag popovers) inserted the drag's raw payload text ("idea:&lt;uuid&gt;") into the field instead of reordering — `Entry` has its own built-in text-drop handling that intercepted our payload because it shared `GType` with plain text. The drag payload is now a distinct type so it never matches.
+- Idea/part tag tabs moved from hanging below-left of the idea bar to hanging from its right edge.
+- Git sync mishandled failures that happened *before* a rebase started (auth, network, no such branch): it unconditionally ran `rebase --abort`, and when that itself failed with "No rebase in progress," the user saw a scary "repository may be in mid-rebase state" message for a repo that was already clean, with the real cause (e.g. an expired GitHub token) buried underneath.
+- A real merge conflict during sync could be misreported as an unrelated failure (or vice versa): the internal helper that reads git's command output picked *either* stdout *or* stderr, and git splits a rebase conflict's diagnostics across both — the actual `CONFLICT (content): ...` marker was silently dropped whenever stderr was non-empty. Sync conflict detection is covered by a new test that reproduces a real conflict against a throwaway local git repo.
+
 ## [0.1.0-dev7] — Visual polish fixes
 
 ### Fixed

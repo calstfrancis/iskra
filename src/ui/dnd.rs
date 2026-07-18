@@ -25,6 +25,19 @@ pub const MOVEMENT_PAYLOAD_PREFIX: &str = "movement:";
 const AUTOSCROLL_MARGIN: f64 = 40.0;
 const AUTOSCROLL_STEP: f64 = 12.0;
 
+/// Wraps an idea/movement drag payload in its own `GType` rather than a plain
+/// `String`. `GtkText` (which backs every `Entry`) registers its own built-in
+/// drop target for plain-string/text content, and — since that target lives
+/// on the Entry itself, deeper in the tree than our column-level
+/// `DropTarget` — it wins whenever a payload's GType matches `String`,
+/// silently inserting the dragged idea's raw payload text ("idea:<uuid>")
+/// into whatever Entry the drop landed on instead of reordering. A distinct
+/// boxed type means GtkText's text target never matches it, so the drop
+/// always reaches our own handling.
+#[derive(Clone, glib::Boxed)]
+#[boxed_type(name = "IskraDragPayload")]
+pub struct DragPayload(pub String);
+
 /// Where a movements-column-space `y` coordinate falls: inside a specific
 /// movement's ideas region (with the movement's index and a y local to that
 /// movement's ideas box), or in the blank space between/around movement
@@ -36,11 +49,15 @@ pub enum DropZone {
 
 /// Locates the drop zone for `y` (in `movements_column`'s own coordinate
 /// space) by walking its `.movement-card` children and translating each
-/// card's ideas box into that space. A collapsed movement's ideas box has
-/// zero height (hidden behind its `Revealer`), so its *card* allocation is
-/// used instead — landing anywhere on a collapsed card's header appends to
-/// that movement, per the mockup's "collapsed movements still accept idea
-/// drops" behavior.
+/// card's full allocation (header *and* ideas box) into that space. Landing
+/// anywhere on a movement's card — including its header/name row, not just
+/// its ideas list — counts as a drop onto that movement: earlier logic only
+/// treated the ideas-box region as "in movement" and fell through to
+/// blank-space handling for the header band, which (since the header sits
+/// above the ideas box, and blank-space compared `y` against the *card's*
+/// midpoint) misread most header drops as "insert a new movement before this
+/// one" instead of "add to this movement" — the bug where dragging an idea
+/// onto a movement's title created a new movement.
 pub fn locate_drop_zone(movements_column: &GtkBox, y: f64) -> DropZone {
     let mut index = 0;
     let mut child = movements_column.first_child();
@@ -50,32 +67,24 @@ pub fn locate_drop_zone(movements_column: &GtkBox, y: f64) -> DropZone {
             continue;
         }
         let card = w.clone().downcast::<GtkBox>().expect("movement-card is a Box");
-        if let Some(ideas_box) = movement_ideas_box(&card) {
-            let ideas_height = ideas_box.height();
-            if ideas_height > 0 {
-                if let Some((_, top)) = ideas_box.translate_coordinates(movements_column, 0.0, 0.0) {
-                    let bottom = top + ideas_height as f64;
-                    if y >= top && y <= bottom {
-                        return DropZone::InMovementIdeas {
-                            movement_index: index,
-                            local_y: y - top,
-                        };
-                    }
-                }
-            } else if let Some((_, card_top)) = card.translate_coordinates(movements_column, 0.0, 0.0) {
-                let alloc = w.allocation();
-                let card_bottom = card_top + alloc.height() as f64;
-                if y >= card_top && y <= card_bottom {
-                    // Collapsed: always append (local_y past any real row's
-                    // midpoint resolves idea_insertion_index to the end).
-                    return DropZone::InMovementIdeas {
-                        movement_index: index,
-                        local_y: f64::MAX,
-                    };
-                }
+        let alloc = w.allocation();
+        if let Some((_, card_top)) = w.translate_coordinates(movements_column, 0.0, 0.0) {
+            let card_bottom = card_top + alloc.height() as f64;
+            if y >= card_top && y <= card_bottom {
+                let local_y = movement_ideas_box(&card)
+                    .filter(|ideas_box| ideas_box.height() > 0)
+                    .and_then(|ideas_box| ideas_box.translate_coordinates(movements_column, 0.0, 0.0))
+                    .map(|(_, top)| (y - top).max(0.0))
+                    // Collapsed (zero-height ideas box) or unresolvable:
+                    // always append, matching "collapsed movements still
+                    // accept idea drops" from the mockup.
+                    .unwrap_or(f64::MAX);
+                return DropZone::InMovementIdeas {
+                    movement_index: index,
+                    local_y,
+                };
             }
         }
-        let alloc = w.allocation();
         let midpoint = alloc.y() as f64 + alloc.height() as f64 / 2.0;
         if y < midpoint {
             return DropZone::BlankSpace { insert_index: index };
@@ -211,7 +220,11 @@ pub fn setup_drag_source(
 ) {
     let source = DragSource::new();
     source.set_actions(gtk4::gdk::DragAction::MOVE);
-    source.connect_prepare(move |_, _, _| Some(ContentProvider::for_value(&Value::from(&payload))));
+    source.connect_prepare(move |_, _, _| {
+        Some(ContentProvider::for_value(&Value::from(&DragPayload(
+            payload.clone(),
+        ))))
+    });
 
     let preview = preview_widget.clone().upcast::<gtk4::Widget>();
     {

@@ -80,15 +80,15 @@ impl Editor {
     /// every rebuild would accumulate duplicates while `rebuild()` only
     /// clears *children*, not controllers attached to `column` itself.
     pub fn init_dnd(self: &Rc<Self>, state: &Rc<RefCell<AppState>>, apply: ApplyFn) {
-        let target = DropTarget::new(String::static_type(), gtk4::gdk::DragAction::MOVE);
+        let target = DropTarget::new(dnd::DragPayload::static_type(), gtk4::gdk::DragAction::MOVE);
         target.set_preload(true);
         {
             let editor = self.clone();
             target.connect_motion(move |t, _x, y| {
-                let Some(payload) = t.value_as::<String>() else {
+                let Some(payload) = t.value_as::<dnd::DragPayload>() else {
                     return gtk4::gdk::DragAction::empty();
                 };
-                editor.on_motion(&payload, y);
+                editor.on_motion(&payload.0, y);
                 gtk4::gdk::DragAction::MOVE
             });
         }
@@ -103,10 +103,10 @@ impl Editor {
             let state = state.clone();
             target.connect_drop(move |_, value, _x, y| {
                 dnd::clear_indicator(&editor.indicator);
-                let Ok(payload) = value.get::<String>() else {
+                let Ok(payload) = value.get::<dnd::DragPayload>() else {
                     return false;
                 };
-                editor.on_drop(&state, &apply, &payload, y)
+                editor.on_drop(&state, &apply, &payload.0, y)
             });
         }
         self.column.add_controller(target);
@@ -344,6 +344,25 @@ impl Editor {
                             }
                         }
                     },
+                    {
+                        let id = id.clone();
+                        let state = state.clone();
+                        let apply = apply.clone();
+                        let editor = self.clone();
+                        move || {
+                            let Some((m, i)) = state.borrow().sermon.find_idea(&id) else {
+                                return;
+                            };
+                            let new_idea = Idea::new();
+                            let new_id = new_idea.id.clone();
+                            apply(Cmd::InsertIdea {
+                                movement: m,
+                                index: i + 1,
+                                idea: new_idea,
+                            });
+                            editor.focus_by_name(&format!("idea:{new_id}"));
+                        }
+                    },
                 );
                 dnd::setup_drag_source(
                     &row.grabber,
@@ -366,6 +385,7 @@ impl Editor {
             {
                 let state = state.clone();
                 let apply = apply.clone();
+                let editor = self.clone();
                 add_idea_btn.connect_clicked(move |_| {
                     let index = state
                         .borrow()
@@ -374,11 +394,14 @@ impl Editor {
                         .get(m_idx)
                         .map(|m| m.ideas.len())
                         .unwrap_or(0);
+                    let idea = Idea::new();
+                    let new_id = idea.id.clone();
                     apply(Cmd::InsertIdea {
                         movement: m_idx,
                         index,
-                        idea: Idea::new(),
+                        idea,
                     });
+                    editor.focus_by_name(&format!("idea:{new_id}"));
                 });
             }
             card.ideas_box.append(&add_idea_btn);

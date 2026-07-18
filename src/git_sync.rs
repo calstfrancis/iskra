@@ -297,14 +297,29 @@ pub fn sync(repo_path: &Path, github_token: Option<&str>) -> SyncResult {
         {
             if !pull_out.status.success() {
                 let msg = lossy_combined(&pull_out);
-                // Abort the rebase so the repo is left in a clean state.
+                if is_auth_error(&msg) {
+                    auth_failed = true;
+                }
+                // `rebase --abort` is only meaningful if the pull actually
+                // got as far as starting a rebase (a real conflict). Pull
+                // can also fail earlier — auth, network, no such remote
+                // branch — in which case there's nothing to abort, and
+                // running it anyway produces its own "No rebase in
+                // progress" error that used to get misreported as "the
+                // repository may be in mid-rebase state," alarming the user
+                // over a problem that didn't exist while burying the real
+                // cause (e.g. an expired GitHub token).
                 match git_cmd(repo_path).args(["rebase", "--abort"]).output() {
                     Ok(a) if !a.status.success() => {
                         let abort_msg = lossy_combined(&a);
-                        push_errors.push(format!(
-                            "({remote}) Pull failed and rebase --abort also failed: {abort_msg}. \
-                             Repository may be in mid-rebase state — run 'git rebase --abort' manually."
-                        ));
+                        if abort_msg.contains("No rebase in progress") {
+                            push_errors.push(format!("({remote}) Couldn't pull latest changes: {msg}"));
+                        } else {
+                            push_errors.push(format!(
+                                "({remote}) Pull failed and rebase --abort also failed: {abort_msg}. \
+                                 Repository may be in mid-rebase state — run 'git rebase --abort' manually."
+                            ));
+                        }
                     }
                     Err(e) => {
                         push_errors.push(format!(
@@ -313,7 +328,7 @@ pub fn sync(repo_path: &Path, github_token: Option<&str>) -> SyncResult {
                         ));
                     }
                     Ok(_) => {
-                        push_errors.push(format!("({remote}) Pull failed: {msg}"));
+                        push_errors.push(format!("({remote}) Couldn't pull latest changes: {msg}"));
                     }
                 }
                 continue;
@@ -397,15 +412,93 @@ fn run_git(repo_path: &Path, args: &[&str]) -> Result<(), String> {
     }
 }
 
+/// Concatenates stdout and stderr rather than picking one — git spreads
+/// diagnostics for the same failure across both (e.g. a rebase conflict's
+/// actual `CONFLICT (content): ...` marker lands on stdout while the
+/// surrounding "resolve manually / run --abort" hints go to stderr), so
+/// preferring only one silently drops information the other holds.
 fn lossy_combined(out: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if !stderr.is_empty() { stderr } else { stdout }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (false, false) => format!("{stdout}\n{stderr}"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Real end-to-end reproduction of a rebase conflict during `sync()`,
+    /// using actual `git` subprocesses against temp repos (no network/auth
+    /// involved — a bare local repo stands in for "GitHub"). Guards against
+    /// the exact bug this test was written for: a pull failure used to
+    /// unconditionally run `rebase --abort`, and if that itself failed for
+    /// an unrelated reason, the user saw "repository may be in mid-rebase
+    /// state" even when the repo was already clean.
+    #[test]
+    fn sync_reports_conflict_and_leaves_repo_clean() {
+        let tmp = tempfile::tempdir().unwrap();
+        // `-b main` on both the bare repo and repo_a pins the branch name so
+        // the bare repo's HEAD resolves correctly once pushed to, and
+        // repo_b's clone below checks out `main` rather than an unborn
+        // default branch.
+        let bare = tmp.path().join("bare.git");
+        run_git(tmp.path(), &["init", "--bare", "-b", "main", bare.to_str().unwrap()]).unwrap();
+
+        // First repo: commit "one", push to the bare remote.
+        let repo_a = tmp.path().join("a");
+        std::fs::create_dir_all(&repo_a).unwrap();
+        run_git(&repo_a, &["init", "-b", "main"]).unwrap();
+        run_git(&repo_a, &["remote", "add", "origin", bare.to_str().unwrap()]).unwrap();
+        set_test_identity(&repo_a);
+        std::fs::write(repo_a.join("sermon.toml"), "title = \"one\"\n").unwrap();
+        run_git(&repo_a, &["add", "."]).unwrap();
+        run_git(&repo_a, &["commit", "-m", "one"]).unwrap();
+        run_git(&repo_a, &["push", "-u", "origin", "main"]).unwrap();
+
+        // Second clone of the same remote, diverges with a conflicting edit
+        // to the same line, and pushes first — so repo_a's pull below hits
+        // a real conflict on the same file.
+        let repo_b = tmp.path().join("b");
+        run_git(tmp.path(), &["clone", bare.to_str().unwrap(), repo_b.to_str().unwrap()]).unwrap();
+        set_test_identity(&repo_b);
+        std::fs::write(repo_b.join("sermon.toml"), "title = \"two\"\n").unwrap();
+        run_git(&repo_b, &["add", "."]).unwrap();
+        run_git(&repo_b, &["commit", "-m", "two"]).unwrap();
+        run_git(&repo_b, &["push", "origin", "main"]).unwrap();
+
+        // Back in repo_a, make a conflicting local change and sync — this
+        // must fail to pull (real CONFLICT), but leave the repo usable.
+        std::fs::write(repo_a.join("sermon.toml"), "title = \"three\"\n").unwrap();
+        let result = sync(&repo_a, None);
+
+        assert!(!result.pushed, "a genuine conflict must not report success");
+        let detail = result.push_errors.join("\n");
+        assert!(detail.contains("CONFLICT"), "expected a real conflict marker, got: {detail}");
+        assert!(
+            !detail.contains("may be in mid-rebase state"),
+            "abort succeeded, so the repo is clean — this message must not appear: {detail}"
+        );
+
+        // The repo must not be left mid-rebase.
+        assert!(!repo_a.join(".git/rebase-merge").exists());
+        assert!(!repo_a.join(".git/rebase-apply").exists());
+        let status = git_cmd(&repo_a).arg("status").output().unwrap();
+        let status_text = String::from_utf8_lossy(&status.stdout);
+        assert!(
+            !status_text.contains("rebase in progress"),
+            "repo left in a mid-rebase state: {status_text}"
+        );
+    }
+
+    fn set_test_identity(path: &Path) {
+        run_git(path, &["config", "user.email", "test@example.com"]).unwrap();
+        run_git(path, &["config", "user.name", "Test"]).unwrap();
+    }
 
     #[test]
     fn is_local_path_recognizes_absolute_and_relative_paths() {
