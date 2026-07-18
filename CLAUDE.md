@@ -38,6 +38,18 @@ Same scheme as the rest of the suite (see root `CLAUDE.md`): dev builds are `X.Y
 
 Lifted from Zerkalo's `git_sync.rs`/`github_auth.rs`/`secret_store.rs` — **git ops shell out to the `git` CLI** (via `flatpak-spawn --host` when sandboxed), not git2, matching what Zerkalo's code actually does (its own CLAUDE.md's claim to the contrary is stale — see Zerkalo's `git_sync.rs`). git2 is only used for local repo discovery/init/identity. Iskra needs its own GitHub OAuth App client ID — do not reuse Zerkalo's or Rubric's.
 
+## Flatpak packaging
+
+- `packaging/cargo-sources.json` vendors all crate dependencies for the offline flatpak build (the `iskra-deps` module in the manifest copies it to `/app/iskra-cargo-vendor`). It must be regenerated whenever `Cargo.lock` changes — a stale one makes `dev-build.sh`/`publish-flatpak.sh` fail at the `cp cargo/vendor` step with "No such file or directory" because the vendor dir it describes no longer matches what's actually in the lockfile.
+- Regenerate with [`flatpak-cargo-generator.py`](https://github.com/flatpak/flatpak-builder-tools/blob/master/cargo/flatpak-cargo-generator.py) (needs `aiohttp`, `PyYAML`, `tomlkit` — use a venv, this system's Python is externally managed):
+  ```bash
+  python3 -m venv /tmp/fcg-venv
+  /tmp/fcg-venv/bin/pip install 'aiohttp<4.0.0,>=3.9.5' 'PyYAML<7.0.0,>=6.0.2' 'tomlkit>=0.13.3,<1.0'
+  curl -sL -o /tmp/flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+  /tmp/fcg-venv/bin/python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o packaging/cargo-sources.json
+  ```
+- Commit the regenerated file whenever a dependency is added, removed, or bumped — don't leave it to Cal to discover via a failed build.
+
 ## Error Handling
 
 - Use `thiserror` types in `src/error.rs`; don't `unwrap()`/`expect()` in UI code paths.
