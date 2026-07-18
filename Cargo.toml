@@ -1,6 +1,6 @@
 [package]
 name = "iskra"
-version = "0.1.0-dev4"
+version = "0.1.0-dev5"
 edition = "2021"
 license = "MIT"
 description = "Sermon planning for preachers who work from structured notes"
@@ -19,6 +19,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["registry", "fmt"] }
 tracing-appender = "0.2"
 shellexpand = "3.1"
+serde_json = "1.0"
+git2 = "0.20"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+keyring = { version = "3", features = ["sync-secret-service"] }
 
 [dev-dependencies]
 tempfile = "3"

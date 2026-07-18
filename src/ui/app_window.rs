@@ -3,18 +3,22 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::prelude::*;
-use gtk4::Button;
+use gtk4::{Box as GtkBox, Button, Label, MenuButton, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::commands::Cmd;
 use crate::config::Config;
+use crate::git_sync;
 use crate::library::LibraryIndex;
 use crate::model::Sermon;
 use crate::state::AppState;
 use crate::storage;
+use crate::ui::backup_setup::BackupSetup;
 use crate::ui::changelog_window::show_changelog;
+use crate::ui::command_palette::{default_commands, outline_items, CommandPalette};
 use crate::ui::editor::{ApplyFn, Editor};
+use crate::ui::export_dialog::ExportDialog;
 use crate::ui::lectionary_panel::LectionaryPanel;
 use crate::ui::library_window::LibraryWindow;
 use crate::ui::status_bar::StatusBar;
@@ -56,10 +60,24 @@ impl AppWindow {
         let title_date = TitleDatePopover::new(&state.borrow().sermon);
         header.set_title_widget(Some(&title_date.button));
 
-        let menu_btn = Button::from_icon_name("open-menu-symbolic");
+        let menu_btn = MenuButton::new();
+        menu_btn.set_icon_name("open-menu-symbolic");
         menu_btn.add_css_class("flat");
         menu_btn.set_tooltip_text(Some("Menu"));
         header.pack_end(&menu_btn);
+
+        let menu_box = GtkBox::new(Orientation::Vertical, 2);
+        menu_box.set_margin_top(6);
+        menu_box.set_margin_bottom(6);
+        menu_box.set_margin_start(6);
+        menu_box.set_margin_end(6);
+        let export_item = make_menu_item("Export…", "Ctrl+E");
+        menu_box.append(&export_item);
+        let backup_setup_item = make_menu_item("Set Up Backup…", "");
+        menu_box.append(&backup_setup_item);
+        let menu_popover = gtk4::Popover::new();
+        menu_popover.set_child(Some(&menu_box));
+        menu_btn.set_popover(Some(&menu_popover));
 
         let undo_btn = Button::from_icon_name("edit-undo-symbolic");
         undo_btn.add_css_class("flat");
@@ -72,6 +90,11 @@ impl AppWindow {
         redo_btn.set_tooltip_text(Some("Redo (Ctrl+Shift+Z)"));
         redo_btn.set_sensitive(false);
         header.pack_end(&redo_btn);
+
+        let sync_btn = Button::from_icon_name("vcs-push-symbolic");
+        sync_btn.add_css_class("flat");
+        sync_btn.set_tooltip_text(Some("Commit & Push to GitHub (Ctrl+Shift+G)"));
+        header.pack_end(&sync_btn);
 
         // ── Sidebar: lectionary panel ─────────────────────────────────────
         let lectionary_panel = LectionaryPanel::new();
@@ -108,6 +131,7 @@ impl AppWindow {
             &title_date,
             &lectionary_panel,
             &status_bar,
+            &toast_overlay,
             &autosave_pending,
         );
 
@@ -154,6 +178,7 @@ impl AppWindow {
             let title_date = title_date.clone();
             let lectionary_panel = lectionary_panel.clone();
             let status_bar = status_bar.clone();
+            let toast_overlay = toast_overlay.clone();
             let autosave_pending = autosave_pending.clone();
             REFRESH.with(|cell| {
                 *cell.borrow_mut() = Some(Box::new(move || {
@@ -165,6 +190,7 @@ impl AppWindow {
                         &title_date,
                         &lectionary_panel,
                         &status_bar,
+                        &toast_overlay,
                         &autosave_pending,
                     );
                     editor.rebuild(&state, recurse);
@@ -173,7 +199,7 @@ impl AppWindow {
                     status_bar.refresh(&state.borrow().sermon);
                     undo_btn.set_sensitive(state.borrow().undo.can_undo());
                     redo_btn.set_sensitive(state.borrow().undo.can_redo());
-                    arm_autosave(&state, &autosave_pending);
+                    arm_autosave(&state, &toast_overlay, &autosave_pending);
                 }));
             });
         }
@@ -226,6 +252,93 @@ impl AppWindow {
             });
         }
 
+        // ── Hamburger menu: Export… ───────────────────────────────────────
+        {
+            let window = window.clone();
+            let state = state.clone();
+            let menu_popover = menu_popover.clone();
+            export_item.connect_clicked(move |_| {
+                menu_popover.popdown();
+                ExportDialog::new(&window, state.borrow().sermon.clone()).present();
+            });
+        }
+        {
+            let win_for_closure = window.clone();
+            let state = state.clone();
+            let ctl = gtk4::EventControllerKey::new();
+            ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            ctl.connect_key_pressed(move |_, key, _, modifiers| {
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && key == gtk4::gdk::Key::e
+                {
+                    ExportDialog::new(&win_for_closure, state.borrow().sermon.clone()).present();
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            window.add_controller(ctl);
+        }
+
+        // ── Hamburger menu: Set Up Backup… ────────────────────────────────
+        {
+            let window = window.clone();
+            let state = state.clone();
+            let menu_popover = menu_popover.clone();
+            backup_setup_item.connect_clicked(move |_| {
+                menu_popover.popdown();
+                let work_dir = state.borrow().config.work_dir.clone();
+                BackupSetup::new(&window, &work_dir).present();
+            });
+        }
+
+        // ── Sync button ──────────────────────────────────────────────────
+        {
+            let win_for_closure = window.clone();
+            let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
+            let btn_for_closure = sync_btn.clone();
+            sync_btn.connect_clicked(move |_| {
+                let work_dir = state.borrow().config.work_dir.clone();
+                if !git_sync::has_remote(&work_dir) {
+                    let setup = BackupSetup::new(&win_for_closure, &work_dir);
+                    let window2 = win_for_closure.clone();
+                    let toast_overlay2 = toast_overlay.clone();
+                    let sync_btn2 = btn_for_closure.clone();
+                    let work_dir2 = work_dir.clone();
+                    setup.window().connect_destroy(move |_| {
+                        if git_sync::has_remote(&work_dir2) {
+                            do_sync(work_dir2.clone(), window2.clone(), toast_overlay2.clone(), sync_btn2.clone());
+                        }
+                    });
+                    setup.present();
+                    return;
+                }
+                do_sync(work_dir, win_for_closure.clone(), toast_overlay.clone(), btn_for_closure.clone());
+            });
+        }
+        {
+            let win_for_closure = window.clone();
+            let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
+            let sync_btn = sync_btn.clone();
+            let ctl = gtk4::EventControllerKey::new();
+            ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            ctl.connect_key_pressed(move |_, key, _, modifiers| {
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK)
+                    && key == gtk4::gdk::Key::G
+                {
+                    let work_dir = state.borrow().config.work_dir.clone();
+                    if git_sync::has_remote(&work_dir) {
+                        do_sync(work_dir, win_for_closure.clone(), toast_overlay.clone(), sync_btn.clone());
+                    }
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            window.add_controller(ctl);
+        }
+
         // ── Welcome / What's New ─────────────────────────────────────────
         if WelcomeWindow::should_show() {
             let is_first_run = WelcomeWindow::is_first_run();
@@ -239,30 +352,43 @@ impl AppWindow {
         library_window.set_current_open(Some(state.borrow().path.clone()));
         {
             let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
             let lw = library_window.clone();
             library_window.set_on_open(move |path| {
-                switch_to_sermon(&state, path);
+                switch_to_sermon(&state, &toast_overlay, path);
                 lw.set_current_open(Some(state.borrow().path.clone()));
                 force_full_refresh(&state);
                 lw.window().close();
             });
         }
-        {
+        let create_new_sermon: Rc<dyn Fn()> = {
             let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
             let lw = library_window.clone();
-            library_window.set_on_new(move || {
+            Rc::new(move || {
                 let sermon = Sermon::new();
                 let path = storage::new_sermon_path(&state.borrow().config.sermons_dir(), &sermon);
-                if storage::save_sermon(&path, &sermon).is_ok() {
-                    switch_to_sermon(&state, path);
-                    lw.set_current_open(Some(state.borrow().path.clone()));
-                    force_full_refresh(&state);
-                    lw.window().close();
+                match storage::save_sermon(&path, &sermon) {
+                    Ok(()) => {
+                        switch_to_sermon(&state, &toast_overlay, path);
+                        lw.set_current_open(Some(state.borrow().path.clone()));
+                        force_full_refresh(&state);
+                        lw.window().close();
+                    }
+                    Err(e) => {
+                        tracing::warn!("failed to create new sermon at {}: {e}", path.display());
+                        show_toast(&toast_overlay, "Couldn't create a new sermon");
+                    }
                 }
-            });
+            })
+        };
+        {
+            let create_new_sermon = create_new_sermon.clone();
+            library_window.set_on_new(move || create_new_sermon());
         }
         {
             let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
             library_window.set_on_delete(move |path| {
                 if path == state.borrow().path {
                     // The row for the currently-open sermon has no delete
@@ -270,7 +396,10 @@ impl AppWindow {
                     // this only guards against a stale callback firing late.
                     return;
                 }
-                let _ = std::fs::remove_file(&path);
+                if let Err(e) = std::fs::remove_file(&path) {
+                    tracing::warn!("failed to delete sermon {}: {e}", path.display());
+                    show_toast(&toast_overlay, "Couldn't delete that sermon");
+                }
                 let sermons_dir = state.borrow().config.sermons_dir();
                 state.borrow_mut().library = LibraryIndex::scan(&sermons_dir);
             });
@@ -282,11 +411,82 @@ impl AppWindow {
         {
             let library_window = library_window.clone();
             let ctl = gtk4::EventControllerKey::new();
+            ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
             ctl.connect_key_pressed(move |_, key, _, modifiers| {
                 if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
                     && key == gtk4::gdk::Key::l
                 {
                     library_window.present();
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            window.add_controller(ctl);
+        }
+
+        // ── Command palette (Ctrl+K) ──────────────────────────────────────
+        let palette = CommandPalette::new(&window);
+        {
+            let state = state.clone();
+            let apply = apply.clone();
+            let editor = editor.clone();
+            let library_window = library_window.clone();
+            let window = window.clone();
+            let split_view = split_view.clone();
+            let create_new_sermon = create_new_sermon.clone();
+            palette.set_on_activate(move |id| match id {
+                "new_sermon" => create_new_sermon(),
+                "open_library" => library_window.present(),
+                "export" => {
+                    ExportDialog::new(&window, state.borrow().sermon.clone()).present();
+                }
+                "undo" => {
+                    let changed = {
+                        let mut st = state.borrow_mut();
+                        let AppState { undo, sermon, .. } = &mut *st;
+                        undo.undo(sermon)
+                    };
+                    if changed {
+                        force_full_refresh(&state);
+                    }
+                }
+                "redo" => {
+                    let changed = {
+                        let mut st = state.borrow_mut();
+                        let AppState { undo, sermon, .. } = &mut *st;
+                        undo.redo(sermon)
+                    };
+                    if changed {
+                        force_full_refresh(&state);
+                    }
+                }
+                "toggle_sidebar" => split_view.set_show_sidebar(!split_view.shows_sidebar()),
+                "add_movement" => {
+                    let at = state.borrow().sermon.movements.len();
+                    apply(Cmd::InsertMovement {
+                        at,
+                        movement: crate::model::Movement::new(at),
+                    });
+                }
+                "changelog" => show_changelog(&window),
+                other => {
+                    editor.focus_by_name(other);
+                }
+            });
+        }
+        {
+            let state = state.clone();
+            let palette = palette.clone();
+            let ctl = gtk4::EventControllerKey::new();
+            ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            ctl.connect_key_pressed(move |_, key, _, modifiers| {
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && key == gtk4::gdk::Key::k
+                {
+                    let mut items = default_commands();
+                    items.extend(outline_items(&state.borrow().sermon));
+                    palette.set_items(items);
+                    palette.show();
                     return glib::Propagation::Stop;
                 }
                 glib::Propagation::Proceed
@@ -406,6 +606,7 @@ fn force_full_refresh(_state: &Rc<RefCell<AppState>>) {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn make_apply(
     state: &Rc<RefCell<AppState>>,
     editor: &Rc<Editor>,
@@ -414,6 +615,7 @@ fn make_apply(
     title_date: &Rc<TitleDatePopover>,
     lectionary_panel: &Rc<LectionaryPanel>,
     status_bar: &Rc<StatusBar>,
+    toast_overlay: &adw::ToastOverlay,
     autosave_pending: &Rc<Cell<Option<glib::SourceId>>>,
 ) -> ApplyFn {
     let state = state.clone();
@@ -423,6 +625,7 @@ fn make_apply(
     let title_date = title_date.clone();
     let lectionary_panel = lectionary_panel.clone();
     let status_bar = status_bar.clone();
+    let toast_overlay = toast_overlay.clone();
     let autosave_pending = autosave_pending.clone();
     Rc::new(move |cmd: Cmd| {
         let structural = cmd.is_structural();
@@ -441,6 +644,7 @@ fn make_apply(
                 &title_date,
                 &lectionary_panel,
                 &status_bar,
+                &toast_overlay,
                 &autosave_pending,
             );
             editor.rebuild(&state, recurse);
@@ -450,29 +654,63 @@ fn make_apply(
         status_bar.refresh(&state.borrow().sermon);
         undo_btn.set_sensitive(state.borrow().undo.can_undo());
         redo_btn.set_sensitive(state.borrow().undo.can_redo());
-        arm_autosave(&state, &autosave_pending);
+        arm_autosave(&state, &toast_overlay, &autosave_pending);
     })
 }
 
-fn arm_autosave(state: &Rc<RefCell<AppState>>, pending: &Rc<Cell<Option<glib::SourceId>>>) {
+fn show_toast(overlay: &adw::ToastOverlay, message: &str) {
+    overlay.add_toast(adw::Toast::new(message));
+}
+
+fn arm_autosave(
+    state: &Rc<RefCell<AppState>>,
+    toast_overlay: &adw::ToastOverlay,
+    pending: &Rc<Cell<Option<glib::SourceId>>>,
+) {
     if let Some(id) = pending.take() {
         id.remove();
     }
     let debounce_ms = state.borrow().config.autosave_debounce_ms;
     let state = state.clone();
+    let toast_overlay = toast_overlay.clone();
     let pending_for_cb = pending.clone();
     let id = glib::timeout_add_local_once(Duration::from_millis(debounce_ms), move || {
         pending_for_cb.set(None);
         let mut st = state.borrow_mut();
         if st.dirty {
             let path = st.path.clone();
-            if storage::save_touched(&path, &mut st.sermon).is_ok() {
-                st.dirty = false;
-                st.library = crate::library::LibraryIndex::scan(&st.config.sermons_dir());
+            match storage::save_touched(&path, &mut st.sermon) {
+                Ok(()) => {
+                    st.dirty = false;
+                    st.library = crate::library::LibraryIndex::scan(&st.config.sermons_dir());
+                }
+                Err(e) => {
+                    tracing::warn!("autosave failed for {}: {e}", path.display());
+                    show_toast(&toast_overlay, "Couldn't save — check disk space or permissions");
+                }
             }
         }
     });
     pending.set(Some(id));
+}
+
+/// A hamburger-menu row: label flush-left, a dim keyboard-shortcut caption
+/// flush-right — see the root CLAUDE.md's "hand-built popover" UI standard.
+fn make_menu_item(label: &str, shortcut: &str) -> Button {
+    let row = GtkBox::new(Orientation::Horizontal, 12);
+    let label_lbl = Label::new(Some(label));
+    label_lbl.set_xalign(0.0);
+    label_lbl.set_hexpand(true);
+    let shortcut_lbl = Label::new(Some(shortcut));
+    shortcut_lbl.add_css_class("dim-label");
+    shortcut_lbl.add_css_class("caption");
+    row.append(&label_lbl);
+    row.append(&shortcut_lbl);
+
+    let btn = Button::new();
+    btn.add_css_class("flat");
+    btn.set_child(Some(&row));
+    btn
 }
 
 fn arm_config_save(state: &Rc<RefCell<AppState>>, pending: &Rc<Cell<Option<glib::SourceId>>>) {
@@ -504,14 +742,22 @@ fn load_or_create_sermon(config: &Config) -> (Sermon, std::path::PathBuf) {
 /// Saves the currently open sermon if dirty, then loads `path` as the new
 /// open sermon — undo history resets, since it belongs to the old sermon.
 /// Caller is responsible for the widget refresh (`force_full_refresh`).
-fn switch_to_sermon(state: &Rc<RefCell<AppState>>, path: std::path::PathBuf) {
+fn switch_to_sermon(state: &Rc<RefCell<AppState>>, toast_overlay: &adw::ToastOverlay, path: std::path::PathBuf) {
     let mut st = state.borrow_mut();
     if st.dirty {
         let mut sermon = st.sermon.clone();
-        let _ = storage::save_touched(&st.path, &mut sermon);
+        if let Err(e) = storage::save_touched(&st.path, &mut sermon) {
+            tracing::warn!("save before switching sermons failed for {}: {e}", st.path.display());
+            show_toast(toast_overlay, "Couldn't save the current sermon before switching");
+        }
     }
-    let Ok(sermon) = storage::load_sermon(&path) else {
-        return;
+    let sermon = match storage::load_sermon(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("failed to open sermon {}: {e}", path.display());
+            show_toast(toast_overlay, "Couldn't open that sermon — the file may be corrupt");
+            return;
+        }
     };
     st.sermon = sermon;
     st.path = path.clone();
@@ -520,4 +766,83 @@ fn switch_to_sermon(state: &Rc<RefCell<AppState>>, path: std::path::PathBuf) {
     st.config.last_sermon = Some(path.clone());
     st.config.push_recent(path);
     let _ = st.config.save();
+}
+
+fn do_sync(
+    root: std::path::PathBuf,
+    window: adw::ApplicationWindow,
+    overlay: adw::ToastOverlay,
+    btn: Button,
+) {
+    use std::sync::mpsc::TryRecvError;
+
+    btn.set_sensitive(false);
+
+    let token = crate::secret_store::load_github_token();
+    let root_for_thread = root.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<git_sync::SyncResult>(1);
+    std::thread::spawn(move || {
+        tx.send(git_sync::sync(&root_for_thread, token.as_deref())).ok();
+    });
+
+    let rx = Rc::new(rx);
+    glib::timeout_add_local(Duration::from_millis(100), move || match rx.try_recv() {
+        Ok(result) => {
+            btn.set_sensitive(true);
+            show_sync_result(&window, &overlay, result);
+            glib::ControlFlow::Break
+        }
+        Err(TryRecvError::Empty) => glib::ControlFlow::Continue,
+        Err(TryRecvError::Disconnected) => {
+            btn.set_sensitive(true);
+            glib::ControlFlow::Break
+        }
+    });
+}
+
+fn show_sync_result(window: &adw::ApplicationWindow, overlay: &adw::ToastOverlay, result: git_sync::SyncResult) {
+    if let Some(err) = result.error {
+        show_alert(window, "Sync Failed", &err);
+        return;
+    }
+    if !result.push_errors.is_empty() {
+        let detail = result.push_errors.join("\n");
+        if result.auth_failed {
+            show_alert(
+                window,
+                "GitHub authentication failed",
+                "Your stored GitHub token was rejected. Open the hamburger menu → Set Up Backup… and sign in again.",
+            );
+            return;
+        }
+        let is_conflict = detail.contains("CONFLICT") || detail.contains("Pull failed");
+        if result.pushed {
+            let summary = result.commit_message.lines().next().unwrap_or("Synced").to_string();
+            show_toast(overlay, &format!("Synced — {summary}"));
+            show_alert(window, "Some remotes failed", &detail);
+        } else if is_conflict {
+            show_alert(
+                window,
+                "Merge conflict — sync aborted",
+                "Remote changes conflict with your local edits. Your work is safe and unchanged.\n\nResolve the conflict by editing the file manually or force-pushing from the command line.",
+            );
+        } else {
+            show_alert(window, "Push Failed", &detail);
+        }
+        return;
+    }
+    if result.pushed {
+        let summary = result.commit_message.lines().next().unwrap_or("Synced").to_string();
+        show_toast(overlay, &format!("Synced — {summary}"));
+    } else if result.committed {
+        show_toast(overlay, "Committed locally — no remote push");
+    } else {
+        show_toast(overlay, "Nothing to sync");
+    }
+}
+
+fn show_alert(window: &adw::ApplicationWindow, title: &str, body: &str) {
+    let dlg = adw::MessageDialog::new(Some(window), Some(title), Some(body));
+    dlg.add_response("ok", "OK");
+    dlg.present();
 }

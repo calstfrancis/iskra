@@ -1,9 +1,13 @@
 mod commands;
 mod config;
 mod error;
+mod git_sync;
+mod github_auth;
 mod library;
 mod model;
 mod rcl;
+mod secret_store;
+mod sermon_export;
 mod state;
 mod storage;
 mod ui;

@@ -58,6 +58,23 @@ impl Editor {
         &self.scroller
     }
 
+    /// Focuses the movement/idea row tagged with `widget_name() == name` (see
+    /// the `set_widget_name` calls in `rebuild`), for the command palette's
+    /// outline-jump items. `GtkScrolledWindow` auto-scrolls a focused
+    /// descendant into view, so grabbing focus is enough. Idea rows use the
+    /// `idea-entry:{id}` name on the text entry itself (not the row) so
+    /// focusing it also opens it for editing.
+    pub fn focus_by_name(&self, name: &str) -> bool {
+        let target = if let Some(id) = name.strip_prefix("idea:") {
+            format!("idea-entry:{id}")
+        } else {
+            name.to_string()
+        };
+        find_by_name(self.column.upcast_ref(), &target)
+            .map(|w| w.grab_focus())
+            .unwrap_or(false)
+    }
+
     /// Wires the movements column's single `DropTarget`. Call once, after
     /// construction — not from `rebuild()` — since re-adding a controller on
     /// every rebuild would accumulate duplicates while `rebuild()` only
@@ -221,6 +238,7 @@ impl Editor {
                     move || apply(Cmd::ToggleMovementCollapsed { id: id.clone() })
                 },
             );
+            card.root.set_widget_name(&format!("movement:{}", movement.id));
 
             for idea in &movement.ideas {
                 let (_, _, number) = numbering[flat_idx];
@@ -333,6 +351,8 @@ impl Editor {
                     format!("{}{}", dnd::IDEA_PAYLOAD_PREFIX, id),
                     &self.drag_active,
                 );
+                row.root.set_widget_name(&format!("idea:{id}"));
+                row.entry.set_widget_name(&format!("idea-entry:{id}"));
                 card.ideas_box.append(&row.root);
             }
 
@@ -378,4 +398,18 @@ impl Editor {
         }
         self.column.append(&add_movement_btn);
     }
+}
+
+fn find_by_name(root: &gtk4::Widget, name: &str) -> Option<gtk4::Widget> {
+    if root.widget_name() == name {
+        return Some(root.clone());
+    }
+    let mut child = root.first_child();
+    while let Some(c) = child {
+        if let Some(found) = find_by_name(&c, name) {
+            return Some(found);
+        }
+        child = c.next_sibling();
+    }
+    None
 }

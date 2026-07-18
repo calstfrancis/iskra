@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.0-dev5] — Export, command palette, git backup
+
+### Added
+- `.sermon` export: renders the open sermon into Rubric's Typst subset (movements → headings, ideas → continuously-numbered bullets, notes → indented continuation lines, optional idea/part tag suffix) with a live preview dialog (Ctrl+E / hamburger menu → Export…). See `Plans/sermon-interchange-spec.md`.
+- Command palette (Ctrl+K): search commands plus every movement/idea in the open sermon as jump targets, doubling as a document outline.
+- Error toasts for autosave failure, opening a corrupt sermon, creating a new sermon, and deleting a sermon — previously these failures were silent.
+- "No matching commands" empty state in the command palette.
+- Git backup: sign in with GitHub (device flow), create or link a repository, and sync (commit + push) from the header's sync button or Ctrl+Shift+G. Sign-in token stored in the system keyring, scoped to `https://github.com/` only. Repo is `~/Documents/Iskra/`.
+
+### Fixed
+- `Plans/sermon-interchange-spec.md`'s escape table had a stale entry for backslash (`\\`) that didn't match Rubric's actual `rubric_package/utils/typst.py` source (`\u{5c}`) — corrected, and Iskra's exporter was written against the source directly.
+
 ## [0.1.0-dev4] — Library
 
 ### Added

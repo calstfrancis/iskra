@@ -1,7 +1,11 @@
 pub mod app_window;
+pub mod backup_setup;
 pub mod changelog_window;
+pub mod command_palette;
 pub mod dnd;
 pub mod editor;
+pub mod export_dialog;
+pub mod github_signin;
 pub mod idea_row;
 pub mod lectionary_panel;
 pub mod library_window;
