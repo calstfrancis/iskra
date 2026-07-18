@@ -9,12 +9,14 @@ use libadwaita::prelude::*;
 
 use crate::commands::Cmd;
 use crate::config::Config;
+use crate::library::LibraryIndex;
 use crate::model::Sermon;
 use crate::state::AppState;
 use crate::storage;
 use crate::ui::changelog_window::show_changelog;
 use crate::ui::editor::{ApplyFn, Editor};
 use crate::ui::lectionary_panel::LectionaryPanel;
+use crate::ui::library_window::LibraryWindow;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::styles;
 use crate::ui::title_date_popover::TitleDatePopover;
@@ -48,8 +50,7 @@ impl AppWindow {
 
         let library_btn = Button::with_label("Library");
         library_btn.add_css_class("flat");
-        library_btn.set_tooltip_text(Some("Open the sermon library (coming in dev4)"));
-        library_btn.set_sensitive(false);
+        library_btn.set_tooltip_text(Some("Open the sermon library (Ctrl+L)"));
         header.pack_start(&library_btn);
 
         let title_date = TitleDatePopover::new(&state.borrow().sermon);
@@ -233,6 +234,66 @@ impl AppWindow {
             welcome.present();
         }
 
+        // ── Library ──────────────────────────────────────────────────────
+        let library_window = LibraryWindow::new(&window, state.borrow().config.sermons_dir());
+        library_window.set_current_open(Some(state.borrow().path.clone()));
+        {
+            let state = state.clone();
+            let lw = library_window.clone();
+            library_window.set_on_open(move |path| {
+                switch_to_sermon(&state, path);
+                lw.set_current_open(Some(state.borrow().path.clone()));
+                force_full_refresh(&state);
+                lw.window().close();
+            });
+        }
+        {
+            let state = state.clone();
+            let lw = library_window.clone();
+            library_window.set_on_new(move || {
+                let sermon = Sermon::new();
+                let path = storage::new_sermon_path(&state.borrow().config.sermons_dir(), &sermon);
+                if storage::save_sermon(&path, &sermon).is_ok() {
+                    switch_to_sermon(&state, path);
+                    lw.set_current_open(Some(state.borrow().path.clone()));
+                    force_full_refresh(&state);
+                    lw.window().close();
+                }
+            });
+        }
+        {
+            let state = state.clone();
+            library_window.set_on_delete(move |path| {
+                if path == state.borrow().path {
+                    // The row for the currently-open sermon has no delete
+                    // button (see `library_window::build_sermon_row`), so
+                    // this only guards against a stale callback firing late.
+                    return;
+                }
+                let _ = std::fs::remove_file(&path);
+                let sermons_dir = state.borrow().config.sermons_dir();
+                state.borrow_mut().library = LibraryIndex::scan(&sermons_dir);
+            });
+        }
+        {
+            let library_window = library_window.clone();
+            library_btn.connect_clicked(move |_| library_window.present());
+        }
+        {
+            let library_window = library_window.clone();
+            let ctl = gtk4::EventControllerKey::new();
+            ctl.connect_key_pressed(move |_, key, _, modifiers| {
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && key == gtk4::gdk::Key::l
+                {
+                    library_window.present();
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            window.add_controller(ctl);
+        }
+
         // ── Geometry + sidebar persistence (debounced 400 ms; ready-gated so
         // GTK's initial layout pass — which fires these same notify signals
         // once on realize — doesn't get saved as if the user had resized).
@@ -407,6 +468,7 @@ fn arm_autosave(state: &Rc<RefCell<AppState>>, pending: &Rc<Cell<Option<glib::So
             let path = st.path.clone();
             if storage::save_touched(&path, &mut st.sermon).is_ok() {
                 st.dirty = false;
+                st.library = crate::library::LibraryIndex::scan(&st.config.sermons_dir());
             }
         }
     });
@@ -437,4 +499,25 @@ fn load_or_create_sermon(config: &Config) -> (Sermon, std::path::PathBuf) {
     let sermon = Sermon::new();
     let path = storage::new_sermon_path(&config.sermons_dir(), &sermon);
     (sermon, path)
+}
+
+/// Saves the currently open sermon if dirty, then loads `path` as the new
+/// open sermon — undo history resets, since it belongs to the old sermon.
+/// Caller is responsible for the widget refresh (`force_full_refresh`).
+fn switch_to_sermon(state: &Rc<RefCell<AppState>>, path: std::path::PathBuf) {
+    let mut st = state.borrow_mut();
+    if st.dirty {
+        let mut sermon = st.sermon.clone();
+        let _ = storage::save_touched(&st.path, &mut sermon);
+    }
+    let Ok(sermon) = storage::load_sermon(&path) else {
+        return;
+    };
+    st.sermon = sermon;
+    st.path = path.clone();
+    st.undo = crate::commands::UndoStack::new();
+    st.dirty = false;
+    st.config.last_sermon = Some(path.clone());
+    st.config.push_recent(path);
+    let _ = st.config.save();
 }

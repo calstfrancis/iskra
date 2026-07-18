@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.0-dev4] — Library
+
+### Added
+- Sermon library: search (title, idea/note text, movement names, tags, secular date, lectionary week), a clickable scripture/theme tag sidebar with occurrence counts, new/open/delete, and a badge marking the currently-open sermon (which can't be deleted from the library).
+- Idea/part tag autocomplete: typing in an idea's tag tab now suggests values already used anywhere in the library, not just the open sermon.
+- `Ctrl+L` opens the library, alongside the header's Library button (now enabled).
+
 ## [0.1.0-dev3] — Header, lectionary & tags
 
 ### Added

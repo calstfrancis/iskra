@@ -177,6 +177,8 @@ impl Editor {
         let numbering = state.borrow().sermon.numbering();
         let total_ideas: usize = numbering.len();
         let movements: Vec<Movement> = state.borrow().sermon.movements.clone();
+        let idea_tag_census: Vec<String> = state.borrow().library.idea_tag_census().into_keys().collect();
+        let part_tag_census: Vec<String> = state.borrow().library.part_tag_census().into_keys().collect();
 
         if total_ideas == 0 {
             let status = adw::StatusPage::new();
@@ -228,6 +230,8 @@ impl Editor {
                 let row = build_idea_row(
                     idea,
                     number,
+                    &idea_tag_census,
+                    &part_tag_census,
                     {
                         let id = id.clone();
                         let state = state.clone();

@@ -1,6 +1,7 @@
 mod commands;
 mod config;
 mod error;
+mod library;
 mod model;
 mod rcl;
 mod state;

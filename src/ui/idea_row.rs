@@ -6,6 +6,8 @@
 //! has in scope, so there's nothing this module would add by taking them
 //! too.
 
+use std::rc::Rc;
+
 use gtk4::prelude::*;
 use gtk4::{
     Align, Box as GtkBox, Button, Image, Label, MenuButton, Orientation, Revealer,
@@ -22,14 +24,16 @@ pub struct IdeaRowWidgets {
     pub notes_view: TextView,
     pub expander: ToggleButton,
     pub grabber: Image,
-    pub idea_tag_popover: TagPopover,
-    pub part_tag_popover: TagPopover,
+    pub idea_tag_popover: Rc<TagPopover>,
+    pub part_tag_popover: Rc<TagPopover>,
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn build_idea_row(
     idea: &Idea,
     number: u32,
+    idea_tag_census: &[String],
+    part_tag_census: &[String],
     on_text_changed: impl Fn(String) + 'static,
     on_notes_changed: impl Fn(String) + 'static,
     on_idea_tag_changed: impl Fn(String) + 'static,
@@ -113,6 +117,7 @@ pub fn build_idea_row(
 
     let idea_tag_popover = TagPopover::new("Idea tag…");
     idea_tag_popover.set_text(&idea.idea_tag);
+    idea_tag_popover.set_census(idea_tag_census.to_vec());
     let idea_tag_btn = MenuButton::new();
     idea_tag_btn.add_css_class("tag-tab");
     idea_tag_btn.add_css_class("flat");
@@ -126,6 +131,7 @@ pub fn build_idea_row(
 
     let part_tag_popover = TagPopover::new("Part tag…");
     part_tag_popover.set_text(&idea.part_tag);
+    part_tag_popover.set_census(part_tag_census.to_vec());
     let part_tag_btn = MenuButton::new();
     part_tag_btn.add_css_class("tag-tab");
     part_tag_btn.add_css_class("flat");
