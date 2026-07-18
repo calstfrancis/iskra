@@ -350,38 +350,48 @@ pub fn sync(repo_path: &Path, github_token: Option<&str>) -> SyncResult {
                 if is_auth_error(&msg) {
                     auth_failed = true;
                 }
-                // `rebase --abort` is only meaningful if the pull actually
-                // got as far as starting a rebase (a real conflict). Pull
-                // can also fail earlier — auth, network, no such remote
-                // branch — in which case there's nothing to abort, and
-                // running it anyway produces its own "No rebase in
-                // progress" error that used to get misreported as "the
-                // repository may be in mid-rebase state," alarming the user
-                // over a problem that didn't exist while burying the real
-                // cause (e.g. an expired GitHub token).
-                match git_cmd(repo_path).args(["rebase", "--abort"]).output() {
-                    Ok(a) if !a.status.success() => {
-                        let abort_msg = lossy_combined(&a);
-                        if abort_msg.contains("No rebase in progress") {
-                            push_errors.push(format!("({remote}) Couldn't pull latest changes: {msg}"));
-                        } else {
+                // A brand-new backup remote (freshly created on GitHub, or
+                // `git init --bare`) has no branches at all yet, so there is
+                // nothing to pull — this must fall through to the push below
+                // rather than being treated as a failure, or the very first
+                // sync to a fresh remote could never succeed.
+                if msg.contains("couldn't find remote ref") {
+                    // Nothing pulled, nothing to abort — proceed to push.
+                } else {
+                    // `rebase --abort` is only meaningful if the pull actually
+                    // got as far as starting a rebase (a real conflict). Pull
+                    // can also fail earlier — auth, network — in which case
+                    // there's nothing to abort, and running it anyway produces
+                    // its own "no rebase in progress" error that used to get
+                    // misreported as "the repository may be in mid-rebase
+                    // state," alarming the user over a problem that didn't
+                    // exist while burying the real cause (e.g. an expired
+                    // GitHub token). Git's own wording for this varies in
+                    // capitalization across versions, so match case-insensitively.
+                    match git_cmd(repo_path).args(["rebase", "--abort"]).output() {
+                        Ok(a) if !a.status.success() => {
+                            let abort_msg = lossy_combined(&a);
+                            if abort_msg.to_lowercase().contains("no rebase in progress") {
+                                push_errors.push(format!("({remote}) Couldn't pull latest changes: {msg}"));
+                            } else {
+                                push_errors.push(format!(
+                                    "({remote}) Pull failed and rebase --abort also failed: {abort_msg}. \
+                                     Repository may be in mid-rebase state — run 'git rebase --abort' manually."
+                                ));
+                            }
+                        }
+                        Err(e) => {
                             push_errors.push(format!(
-                                "({remote}) Pull failed and rebase --abort also failed: {abort_msg}. \
+                                "({remote}) Pull failed and could not run rebase --abort: {e}. \
                                  Repository may be in mid-rebase state — run 'git rebase --abort' manually."
                             ));
                         }
+                        Ok(_) => {
+                            push_errors.push(format!("({remote}) Couldn't pull latest changes: {msg}"));
+                        }
                     }
-                    Err(e) => {
-                        push_errors.push(format!(
-                            "({remote}) Pull failed and could not run rebase --abort: {e}. \
-                             Repository may be in mid-rebase state — run 'git rebase --abort' manually."
-                        ));
-                    }
-                    Ok(_) => {
-                        push_errors.push(format!("({remote}) Couldn't pull latest changes: {msg}"));
-                    }
+                    continue;
                 }
-                continue;
             }
         }
 
@@ -542,6 +552,60 @@ mod tests {
         assert!(
             !status_text.contains("rebase in progress"),
             "repo left in a mid-rebase state: {status_text}"
+        );
+    }
+
+    /// First sync to a brand-new, completely empty remote (a freshly created
+    /// GitHub repo, or a bare repo just `git init --bare`'d): `pull --rebase`
+    /// fails with "couldn't find remote ref <branch>" since there's nothing
+    /// there yet. This must not be treated as a sync failure — there's
+    /// nothing to abort and nothing lost, so the push should still happen.
+    #[test]
+    fn sync_to_a_brand_new_empty_remote_still_pushes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = tmp.path().join("bare.git");
+        run_git(tmp.path(), &["init", "--bare", "-b", "main", bare.to_str().unwrap()]).unwrap();
+
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_git(&repo, &["init", "-b", "main"]).unwrap();
+        run_git(&repo, &["remote", "add", "origin", bare.to_str().unwrap()]).unwrap();
+        set_test_identity(&repo);
+        std::fs::write(repo.join("sermon.toml"), "title = \"one\"\n").unwrap();
+
+        let result = sync(&repo, None);
+
+        assert!(result.pushed, "first sync to an empty remote must still push: {:?}", result.push_errors);
+        assert!(result.push_errors.is_empty(), "unexpected errors: {:?}", result.push_errors);
+    }
+
+    /// Reproduces the exact bug reported live: on git 2.55, `rebase --abort`
+    /// with nothing to abort prints "fatal: no rebase in progress" (lowercase
+    /// "no"), but the guard added for the conflict-vs-clean-repo bug above
+    /// checked for capital "No rebase in progress" — so on this git version
+    /// every non-conflict pull failure (including the empty-remote case
+    /// above, and any real auth/network failure) fell through to the scary
+    /// "repository may be in mid-rebase state" message instead of the real
+    /// cause. Matching case-insensitively fixes this regardless of git's
+    /// exact capitalization on a given version.
+    #[test]
+    fn rebase_abort_message_matches_regardless_of_git_version_casing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_git(&repo, &["init", "-b", "main"]).unwrap();
+        set_test_identity(&repo);
+        std::fs::write(repo.join("sermon.toml"), "title = \"one\"\n").unwrap();
+        run_git(&repo, &["add", "."]).unwrap();
+        run_git(&repo, &["commit", "-m", "one"]).unwrap();
+
+        let abort = git_cmd(&repo).args(["rebase", "--abort"]).output().unwrap();
+        assert!(!abort.status.success());
+        let abort_msg = lossy_combined(&abort);
+        assert!(
+            abort_msg.to_lowercase().contains("no rebase in progress"),
+            "this test assumes git prints some case of 'no rebase in progress' \
+             with nothing to abort; got: {abort_msg}"
         );
     }
 

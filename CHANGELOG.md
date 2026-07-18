@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.0-dev1] — Workflow improvements: templates, preaching view, history
+## [0.2.0-dev2] — Workflow improvements: templates, preaching view, history
 
 ### Added
 - Keyboard reordering: Alt+Up/Alt+Down moves the focused idea or movement, as an alternative to dragging.
@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Undoing or redoing a change never marked the sermon dirty, so autosave could silently skip an undone/redone edit.
 - The command palette's "jump to movement" outline entries never actually moved focus, because a movement card's root container isn't itself focusable.
+- Git sync's dev8 fix for the mid-rebase false alarm checked for capitalized "No rebase in progress," but git 2.55 prints it lowercase — so on that git version, every non-conflict pull failure (auth, network, an empty remote) still fell through to the scary "repository may be in mid-rebase state" message instead of the real cause. The check is now case-insensitive.
+- The very first sync to a brand-new, completely empty backup remote (freshly created on GitHub, nothing pushed yet) always failed: `pull --rebase` errors with "couldn't find remote ref" since there's nothing there, and that was being treated like any other pull failure — skipping the push entirely. That specific failure now falls through straight to the push instead.
 
 ## [0.1.0-dev8] — Fast entry, drag fixes, sync robustness
 
