@@ -36,8 +36,15 @@
     </screenshot>
   </screenshots>
   <releases>
-    <!-- No entries yet — added only at actual release time, never for a
-         dev build (AppStream has no pre-release ordering concept, so a
-         "-devN" entry sorts as newer than the eventual clean release). -->
+    <release version="0.2.0" date="2026-07-18">
+      <description>
+        <p>
+          First Light — the first release. Sermon templates, a large-print
+          chrome-free Preaching View, an in-app history browser backed by
+          git, sermon series grouping, quick-pick tag chips, and a batch of
+          drag-and-drop and git sync robustness fixes.
+        </p>
+      </description>
+    </release>
   </releases>
 </component>

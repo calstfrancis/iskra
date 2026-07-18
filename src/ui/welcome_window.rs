@@ -98,10 +98,15 @@ impl WelcomeWindow {
         } else {
             body.append(&section_label(&format!("What's New in {VERSION}")));
             for item in [
-                "Added: title and planned-date popover in the header, with Revised Common Lectionary readings resolved automatically",
-                "Added: lectionary sidebar panel showing season, colour, and the day's four readings",
-                "Added: scripture (s.) and theme (t.) tag chips in the status bar",
-                "Added: this changelog window and What's New dialog",
+                "Added: \"New Sermon\" now offers built-in templates (Three-Point Expository, Narrative Arc, Topical) alongside a blank sermon",
+                "Added: Preaching View — a large-print, chrome-free fullscreen display for the pulpit (Ctrl+Shift+P)",
+                "Added: History — browse and restore past committed versions of the open sermon (Ctrl+Shift+H)",
+                "Added: sermons can belong to a named series, grouped and filterable in the library",
+                "Added: quick-pick tag chips show your most-used idea/part tags as one click",
+                "Added: a toast when a scripture tag repeats a past sermon, naming it",
+                "Added: a \"Saved\"/\"Unsaved changes\" indicator in the status bar",
+                "Fixed: dragging an idea onto an existing movement, runaway autoscroll during drag, and focus jumping to the first movement after any edit",
+                "Fixed: several git sync robustness issues, including the very first sync to a brand-new backup remote",
             ] {
                 body.append(&bullet_row(item));
             }
@@ -112,6 +117,12 @@ impl WelcomeWindow {
         for (key, desc) in [
             ("Ctrl+Z", "Undo"),
             ("Ctrl+Shift+Z", "Redo"),
+            ("Ctrl+K", "Command palette"),
+            ("Ctrl+L", "Open library"),
+            ("Ctrl+E", "Export…"),
+            ("Ctrl+Shift+P", "Preaching View"),
+            ("Ctrl+Shift+H", "History…"),
+            ("Ctrl+Shift+G", "Commit & push"),
         ] {
             body.append(&shortcut_row(key, desc));
         }

@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.0-dev4] — Workflow improvements: templates, preaching view, history
+## [0.2.0] "First Light" — Workflow improvements: templates, preaching view, history
 
 ### Added
 - Keyboard reordering: Alt+Up/Alt+Down moves the focused idea or movement, as an alternative to dragging.
