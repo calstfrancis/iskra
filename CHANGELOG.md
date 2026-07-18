@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.0-dev3] — Workflow improvements: templates, preaching view, history
+## [0.2.0-dev4] — Workflow improvements: templates, preaching view, history
 
 ### Added
 - Keyboard reordering: Alt+Up/Alt+Down moves the focused idea or movement, as an alternative to dragging.
@@ -26,6 +26,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The very first sync to a brand-new, completely empty backup remote (freshly created on GitHub, nothing pushed yet) always failed: `pull --rebase` errors with "couldn't find remote ref" since there's nothing there, and that was being treated like any other pull failure — skipping the push entirely. That specific failure now falls through straight to the push instead.
 - Dragging an idea onto an *existing* movement's ideas list always silently rejected the drop: the ideas box lives inside a `Revealer` (added for collapse/expand), and the lookup that finds it by CSS class only checked a movement card's direct children, never descending into the revealer — so it always came back empty and the drop handler treated that as "nothing to drop onto." Now finds it as a descendant, wherever it's nested.
 - Dragging an idea anywhere on the movements column could send the view scrolling rapidly downward and not stop: autoscroll compared the pointer's position in the (very tall, mostly off-screen) movements column against the *scroller's* viewport height, two unrelated coordinate spaces — so almost any drag past the very top of the document read as "near the bottom edge." The pointer position is now translated into the scroller's own coordinate space before that check.
+- Any structural change (drag-drop reorder, deleting a movement or idea, toggling collapse, ...) rebuilds the whole editor from the model, and if the widget that had keyboard focus was one of the ones just torn down, GTK reassigned focus on its own — in practice always landing on and selecting the first movement's title. Focus is now explicitly cleared first whenever it's about to be destroyed, so a rebuild no longer jumps the view anywhere.
 
 ## [0.1.0-dev8] — Fast entry, drag fixes, sync robustness
 

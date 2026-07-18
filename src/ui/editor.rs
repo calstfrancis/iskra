@@ -206,6 +206,26 @@ impl Editor {
     /// Tears down and repopulates the movements column from `state.sermon`.
     /// Called after every structural command and once at startup.
     pub fn rebuild(self: &Rc<Self>, state: &Rc<RefCell<AppState>>, apply: ApplyFn) {
+        // Every structural `Cmd` (drag-drop reorder, delete movement/idea,
+        // toggle collapse, ...) tears down and rebuilds the whole widget
+        // tree below. If the widget that currently has keyboard focus is
+        // about to be destroyed, GTK doesn't just drop focus — it
+        // reassigns it to *some* focusable widget still in the window, in
+        // practice the first movement's name entry in tab order, which then
+        // reads as the view "jumping" to select that entry's text. Clearing
+        // focus first (only when it's actually about to be destroyed, i.e.
+        // it's a descendant of this editor) makes that reassignment a no-op:
+        // after rebuild, nothing is focused unless a caller explicitly
+        // requests it via `focus_by_name` (e.g. after adding/duplicating an
+        // idea), which still runs after this and wins.
+        if let Some(root) = self.column.root() {
+            if let Some(focus) = gtk4::prelude::RootExt::focus(&root) {
+                if focus.is_ancestor(&self.column) || focus == self.column.clone().upcast::<gtk4::Widget>() {
+                    gtk4::prelude::RootExt::set_focus(&root, None::<&gtk4::Widget>);
+                }
+            }
+        }
+
         while let Some(child) = self.column.first_child() {
             self.column.remove(&child);
         }
