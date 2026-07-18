@@ -95,6 +95,10 @@ fn rebuild_tag_group(container: &GtkBox, tags: &[String], kind: SermonTagKind, a
     for tag in tags {
         let chip = GtkBox::new(Orientation::Horizontal, 2);
         chip.add_css_class("tag-chip");
+        chip.add_css_class(match kind {
+            SermonTagKind::S => "tag-chip-s",
+            SermonTagKind::T => "tag-chip-t",
+        });
 
         let label = Label::new(Some(tag));
         chip.append(&label);

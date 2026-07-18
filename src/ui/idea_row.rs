@@ -45,12 +45,12 @@ pub fn build_idea_row(
     root.add_css_class("idea-row");
 
     let bar = GtkBox::new(Orientation::Horizontal, 6);
-    bar.set_margin_top(2);
-    bar.set_margin_bottom(2);
+    bar.add_css_class("idea-bar");
 
-    let number_label = Label::new(Some(&format!("{number}.")));
+    let number_label = Label::new(Some(&number.to_string()));
     number_label.add_css_class("idea-number");
-    number_label.set_xalign(1.0);
+    number_label.set_halign(Align::Center);
+    number_label.set_valign(Align::Center);
     bar.append(&number_label);
 
     let entry = gtk4::Entry::new();
@@ -74,6 +74,7 @@ pub fn build_idea_row(
 
     let delete_btn = Button::from_icon_name("user-trash-symbolic");
     delete_btn.add_css_class("flat");
+    delete_btn.add_css_class("idea-delete");
     delete_btn.set_tooltip_text(Some("Delete idea"));
     bar.append(&delete_btn);
 
@@ -82,13 +83,19 @@ pub fn build_idea_row(
 
     root.append(&bar);
 
-    // Notes revealer
+    // Notes revealer — a narrower, inset rounded box hanging below the bar
+    // (see the mockup: the notes dropdown reads as a smaller pill nested
+    // under the idea bar, not a full-width strip).
     let notes_view = TextView::new();
+    notes_view.add_css_class("idea-notes");
     notes_view.set_wrap_mode(WrapMode::WordChar);
-    notes_view.set_top_margin(4);
-    notes_view.set_bottom_margin(4);
-    notes_view.set_left_margin(36);
-    notes_view.set_right_margin(8);
+    notes_view.set_top_margin(8);
+    notes_view.set_bottom_margin(8);
+    notes_view.set_left_margin(10);
+    notes_view.set_right_margin(10);
+    notes_view.set_margin_start(40);
+    notes_view.set_margin_end(16);
+    notes_view.set_margin_top(4);
     notes_view.buffer().set_text(&idea.notes);
 
     let notes_revealer = Revealer::new();
@@ -110,9 +117,10 @@ pub fn build_idea_row(
         });
     }
 
-    // Tag tabs
-    let tags_row = GtkBox::new(Orientation::Horizontal, 4);
-    tags_row.set_margin_start(36);
+    // Tag tabs — two coloured tabs hanging below the bar (idea tag / part
+    // tag), distinguished by colour rather than just label.
+    let tags_row = GtkBox::new(Orientation::Horizontal, 3);
+    tags_row.set_margin_start(14);
     tags_row.set_halign(Align::Start);
 
     let idea_tag_popover = TagPopover::new("Idea tag…");
@@ -120,12 +128,14 @@ pub fn build_idea_row(
     idea_tag_popover.set_census(idea_tag_census.to_vec());
     let idea_tag_btn = MenuButton::new();
     idea_tag_btn.add_css_class("tag-tab");
+    idea_tag_btn.add_css_class("tag-tab-idea");
     idea_tag_btn.add_css_class("flat");
     idea_tag_btn.set_label(if idea.idea_tag.is_empty() {
         "idea"
     } else {
         &idea.idea_tag
     });
+    set_empty_class(&idea_tag_btn, idea.idea_tag.is_empty());
     idea_tag_btn.set_popover(Some(idea_tag_popover.popover()));
     tags_row.append(&idea_tag_btn);
 
@@ -134,12 +144,14 @@ pub fn build_idea_row(
     part_tag_popover.set_census(part_tag_census.to_vec());
     let part_tag_btn = MenuButton::new();
     part_tag_btn.add_css_class("tag-tab");
+    part_tag_btn.add_css_class("tag-tab-part");
     part_tag_btn.add_css_class("flat");
     part_tag_btn.set_label(if idea.part_tag.is_empty() {
         "part"
     } else {
         &idea.part_tag
     });
+    set_empty_class(&part_tag_btn, idea.part_tag.is_empty());
     part_tag_btn.set_popover(Some(part_tag_popover.popover()));
     tags_row.append(&part_tag_btn);
 
@@ -170,6 +182,7 @@ pub fn build_idea_row(
             let text = e.text();
             on_idea_tag_changed(text.to_string());
             btn2.set_label(if text.is_empty() { "idea" } else { &text });
+            set_empty_class(&btn2, text.is_empty());
         });
     }
     {
@@ -186,6 +199,7 @@ pub fn build_idea_row(
             let text = e.text();
             on_part_tag_changed(text.to_string());
             btn2.set_label(if text.is_empty() { "part" } else { &text });
+            set_empty_class(&btn2, text.is_empty());
         });
     }
     delete_btn.connect_clicked(move |_| on_delete());
@@ -198,5 +212,16 @@ pub fn build_idea_row(
         grabber,
         idea_tag_popover,
         part_tag_popover,
+    }
+}
+
+/// Ghosts a tag tab when its value is unset, so an idea with no tags reads
+/// as visibly different from one that's actually tagged "idea"/"part" —
+/// otherwise the placeholder label and a genuine tag value look identical.
+fn set_empty_class(btn: &MenuButton, is_empty: bool) {
+    if is_empty {
+        btn.add_css_class("tag-tab-empty");
+    } else {
+        btn.remove_css_class("tag-tab-empty");
     }
 }

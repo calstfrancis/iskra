@@ -47,6 +47,7 @@ pub fn build_movement_card(
         "pan-down-symbolic"
     });
     collapse_btn.add_css_class("flat");
+    collapse_btn.add_css_class("movement-header-icon");
     collapse_btn.set_active(movement.collapsed);
     collapse_btn.set_tooltip_text(Some("Collapse movement"));
     header.append(&collapse_btn);

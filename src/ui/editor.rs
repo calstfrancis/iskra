@@ -14,7 +14,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Align, Box as GtkBox, Button, DropTarget, Orientation, ScrolledWindow};
+use gtk4::{Align, Box as GtkBox, Button, DropTarget, Label, Orientation, ScrolledWindow};
 use libadwaita as adw;
 
 use crate::commands::{Cmd, TagKind};
@@ -354,6 +354,16 @@ impl Editor {
                 row.root.set_widget_name(&format!("idea:{id}"));
                 row.entry.set_widget_name(&format!("idea-entry:{id}"));
                 card.ideas_box.append(&row.root);
+            }
+
+            if movement.ideas.is_empty() {
+                let placeholder = GtkBox::new(Orientation::Horizontal, 0);
+                placeholder.add_css_class("empty-movement-placeholder");
+                let placeholder_lbl = Label::new(Some("No ideas yet — click + Add idea below"));
+                placeholder_lbl.add_css_class("dim-label");
+                placeholder_lbl.add_css_class("caption");
+                placeholder.append(&placeholder_lbl);
+                card.ideas_box.append(&placeholder);
             }
 
             let add_idea_btn = Button::with_label("+ Add idea");

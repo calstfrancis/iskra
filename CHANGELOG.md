@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.0-dev6] — Visual polish
+
+### Changed
+- Idea rows are now rounded bars (matching the original mockup) instead of flat, unboxed rows, with a narrower inset rounded box for expanded notes and two coloured tabs (idea tag / part tag) hanging below.
+- Empty idea/part tags now render ghosted/muted instead of in the same bold colour as a genuinely-set tag, so it's clear at a glance which ideas are actually tagged.
+- Movement cards get a visibly tinted background, border, and soft shadow so idea bars read as clearly nested within them.
+- Idea numbers are now small accent-coloured badges instead of plain "1." text.
+- The drag grabber and delete-idea icons are dimmed by default and brighten on hover, so they recede until needed; the movement collapse triangle is similarly dimmed relative to the (now bold) movement name.
+- A movement with no ideas yet shows a dashed placeholder instead of an empty gap.
+- Scripture (s.) and theme (t.) tag chips in the status bar are now colour-coded to match the idea/part tag language used on idea rows.
+
 ## [0.1.0-dev5] — Export, command palette, git backup
 
 ### Added
