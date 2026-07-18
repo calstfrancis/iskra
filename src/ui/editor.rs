@@ -357,13 +357,7 @@ impl Editor {
             }
 
             if movement.ideas.is_empty() {
-                let placeholder = GtkBox::new(Orientation::Horizontal, 0);
-                placeholder.add_css_class("empty-movement-placeholder");
-                let placeholder_lbl = Label::new(Some("No ideas yet — click + Add idea below"));
-                placeholder_lbl.add_css_class("dim-label");
-                placeholder_lbl.add_css_class("caption");
-                placeholder.append(&placeholder_lbl);
-                card.ideas_box.append(&placeholder);
+                card.ideas_box.append(&build_empty_movement_placeholder());
             }
 
             let add_idea_btn = Button::with_label("+ Add idea");
@@ -408,6 +402,19 @@ impl Editor {
         }
         self.column.append(&add_movement_btn);
     }
+}
+
+/// A compact inline empty state for one movement's ideas box — distinct from
+/// the full `adw::StatusPage` used above for the whole-sermon case, which
+/// would be oversized nested inside a movement card.
+fn build_empty_movement_placeholder() -> GtkBox {
+    let placeholder = GtkBox::new(Orientation::Horizontal, 0);
+    placeholder.add_css_class("empty-movement-placeholder");
+    let label = Label::new(Some("No ideas yet — click + Add idea below"));
+    label.add_css_class("dim-label");
+    label.add_css_class("caption");
+    placeholder.append(&label);
+    placeholder
 }
 
 fn find_by_name(root: &gtk4::Widget, name: &str) -> Option<gtk4::Widget> {

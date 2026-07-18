@@ -49,6 +49,8 @@ pub fn build_idea_row(
 
     let number_label = Label::new(Some(&number.to_string()));
     number_label.add_css_class("idea-number");
+    number_label.set_width_chars(2);
+    number_label.set_justify(gtk4::Justification::Center);
     number_label.set_halign(Align::Center);
     number_label.set_valign(Align::Center);
     bar.append(&number_label);
@@ -83,9 +85,7 @@ pub fn build_idea_row(
 
     root.append(&bar);
 
-    // Notes revealer — a narrower, inset rounded box hanging below the bar
-    // (see the mockup: the notes dropdown reads as a smaller pill nested
-    // under the idea bar, not a full-width strip).
+    // Notes revealer
     let notes_view = TextView::new();
     notes_view.add_css_class("idea-notes");
     notes_view.set_wrap_mode(WrapMode::WordChar);
@@ -120,7 +120,8 @@ pub fn build_idea_row(
     // Tag tabs — two coloured tabs hanging below the bar (idea tag / part
     // tag), distinguished by colour rather than just label.
     let tags_row = GtkBox::new(Orientation::Horizontal, 3);
-    tags_row.set_margin_start(14);
+    // Matches notes_view's margin_start so both line up under the bar.
+    tags_row.set_margin_start(40);
     tags_row.set_halign(Align::Start);
 
     let idea_tag_popover = TagPopover::new("Idea tag…");

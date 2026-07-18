@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.0-dev7] — Visual polish fixes
+
+### Fixed
+- Dragging an idea onto an empty movement could draw the drop-indicator line in the wrong place (below the "No ideas yet" placeholder) even though the idea always actually lands at the top; the placeholder is now correctly ignored by the drag insertion-point math.
+- The movement name field lost its focus highlight in the dev6 redesign; restored (via the movement header, not the entry itself).
+- The expanded-notes box and the idea/part tag tabs beneath it no longer lined up after the dev6 redesign; realigned.
+- The movement collapse triangle's tooltip stayed "Collapse movement" even when already collapsed.
+- Idea numbers 10 and above stretched the round number badge into an oval; now a consistent width regardless of digit count.
+
 ## [0.1.0-dev6] — Visual polish
 
 ### Changed

@@ -49,7 +49,11 @@ pub fn build_movement_card(
     collapse_btn.add_css_class("flat");
     collapse_btn.add_css_class("movement-header-icon");
     collapse_btn.set_active(movement.collapsed);
-    collapse_btn.set_tooltip_text(Some("Collapse movement"));
+    collapse_btn.set_tooltip_text(Some(if movement.collapsed {
+        "Expand movement"
+    } else {
+        "Collapse movement"
+    }));
     header.append(&collapse_btn);
 
     let grabber = dnd::drag_grabber("Drag to reorder movement");

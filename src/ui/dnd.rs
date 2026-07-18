@@ -117,7 +117,11 @@ pub fn idea_insertion_index(ideas_box: &GtkBox, y: f64) -> usize {
     let mut index = 0;
     let mut child = ideas_box.first_child();
     while let Some(w) = child {
-        if w.css_classes().iter().any(|c| c == "drop-indicator") {
+        if w
+            .css_classes()
+            .iter()
+            .any(|c| c == "drop-indicator" || c == "empty-movement-placeholder")
+        {
             child = w.next_sibling();
             continue;
         }
@@ -160,6 +164,7 @@ pub fn place_idea_indicator(indicator: &GtkBox, movements_column: &GtkBox, movem
     }
     let children: Vec<_> = std::iter::successors(ideas_box.first_child(), |w| w.next_sibling())
         .filter(|w| w != &indicator.clone().upcast::<gtk4::Widget>())
+        .filter(|w| !w.css_classes().iter().any(|c| c == "empty-movement-placeholder"))
         .collect();
     match children.get(insertion_index) {
         Some(reference) => indicator.insert_before(&ideas_box, Some(reference)),

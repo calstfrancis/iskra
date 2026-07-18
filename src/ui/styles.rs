@@ -47,6 +47,11 @@ const GLOBAL_CSS: &str = ".paned > separator { \
     } \
     .movement-card-header { \
         padding: 4px 4px 4px 8px; \
+        border-radius: 8px; \
+        transition: background-color 100ms ease; \
+    } \
+    .movement-card-header:focus-within { \
+        background: alpha(@accent_color, 0.08); \
     } \
     .movement-name-entry { \
         font-weight: 700; \
