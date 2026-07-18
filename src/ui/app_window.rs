@@ -117,6 +117,7 @@ impl AppWindow {
             &autosave_pending,
         );
 
+        editor.init_dnd(&state, apply.clone());
         editor.rebuild(&state, apply.clone());
 
         {
@@ -176,7 +177,12 @@ impl AppWindow {
         }
 
         // ── Keybindings: Ctrl+Z / Ctrl+Shift+Z ───────────────────────────
+        // Capture phase, not the default bubble: a focused Entry's own key
+        // handling otherwise consumes Ctrl+Z before it would ever bubble up
+        // to this controller, silently swallowing the shortcut whenever the
+        // user is mid-edit — which is most of the time in this app.
         let key_ctl = gtk4::EventControllerKey::new();
+        key_ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
         {
             let state = state.clone();
             key_ctl.connect_key_pressed(move |_, key, _, modifiers| {

@@ -1,7 +1,10 @@
 //! A single idea bar: number · click-to-edit text · expansion triangle
-//! (→ notes) · grabber, with idea/part tag tabs hanging below. DragSource
-//! wiring on the grabber lands in dev2 (see Plans/plan.md §3) — for dev1 the
-//! grabber is a static affordance.
+//! (→ notes) · grabber, with idea/part tag tabs hanging below. The grabber
+//! only gets its `DragSource` wired by the caller (`editor.rs`, via
+//! `ui::dnd::setup_drag_source`) — building it here would need the idea's
+//! id and the shared `drag_active` flag, both of which `editor.rs` already
+//! has in scope, so there's nothing this module would add by taking them
+//! too.
 
 use gtk4::prelude::*;
 use gtk4::{
@@ -10,6 +13,7 @@ use gtk4::{
 };
 
 use crate::model::Idea;
+use crate::ui::dnd;
 use crate::ui::tag_popover::TagPopover;
 
 pub struct IdeaRowWidgets {
@@ -17,6 +21,7 @@ pub struct IdeaRowWidgets {
     pub entry: gtk4::Entry,
     pub notes_view: TextView,
     pub expander: ToggleButton,
+    pub grabber: Image,
     pub idea_tag_popover: TagPopover,
     pub part_tag_popover: TagPopover,
 }
@@ -68,9 +73,7 @@ pub fn build_idea_row(
     delete_btn.set_tooltip_text(Some("Delete idea"));
     bar.append(&delete_btn);
 
-    let grabber = Image::from_icon_name("list-drag-handle-symbolic");
-    grabber.add_css_class("idea-grabber");
-    grabber.set_tooltip_text(Some("Drag to reorder"));
+    let grabber = dnd::drag_grabber("Drag to reorder");
     bar.append(&grabber);
 
     root.append(&bar);
@@ -186,6 +189,7 @@ pub fn build_idea_row(
         entry,
         notes_view,
         expander,
+        grabber,
         idea_tag_popover,
         part_tag_popover,
     }

@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.0-dev2] — Movements & drag-and-drop
+
+### Added
+- Movement cards: editable name, collapse triangle (ideas hidden behind a `Revealer`, still accept idea drops when collapsed), and a drag grabber to reorder whole movements.
+- Full drag-and-drop: reorder ideas within a movement, move ideas between movements, reorder movements themselves, and drag an idea into blank space above/below/between movements to spin up a new movement holding it — all as single undo steps.
+- "+ Add movement" affordance alongside each movement's own "+ Add idea".
+- Numbering stays continuous and correct across all of the above, recomputed on every change.
+
+### Fixed
+- Ctrl+Z/Ctrl+Shift+Z now work while a text entry has focus — the shortcut was previously swallowed by whichever entry currently had focus, since the window's key controller listened on the default bubble phase; it now listens on the capture phase instead.
+
 ## [0.1.0-dev1] — Skeleton & ideas
 
 ### Added

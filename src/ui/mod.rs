@@ -1,6 +1,8 @@
 pub mod app_window;
+pub mod dnd;
 pub mod editor;
 pub mod idea_row;
+pub mod movement_card;
 pub mod status_bar;
 pub mod styles;
 pub mod tag_popover;
