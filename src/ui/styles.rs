@@ -32,6 +32,16 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         background: alpha(@success_color, 0.24); \
         color: @success_color; \
     } \
+    .tag-quick-pick { \
+        font-size: 0.8em; \
+        padding: 2px 8px; \
+        min-height: 0; \
+        border-radius: 999px; \
+        background: alpha(@window_fg_color, 0.08); \
+    } \
+    .tag-quick-pick:hover { \
+        background: alpha(@accent_color, 0.18); \
+    } \
     .sidebar-header { \
         font-size: 0.75em; \
         font-weight: bold; \
@@ -181,6 +191,33 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         min-height: 9px; \
         border-radius: 5px; \
         margin-top: 1px; \
+    } \
+    .preaching-view-window { \
+        background: @window_bg_color; \
+        color: @window_fg_color; \
+    } \
+    .preaching-title { \
+        font-size: 2.4em; \
+        font-weight: 800; \
+    } \
+    .preaching-date { \
+        font-size: 1.3em; \
+        opacity: 0.6; \
+        margin-bottom: 8px; \
+    } \
+    .preaching-movement { \
+        font-size: 1.6em; \
+        font-weight: 700; \
+        color: @accent_color; \
+    } \
+    .preaching-idea { \
+        font-size: 1.8em; \
+        font-weight: 500; \
+    } \
+    .preaching-notes { \
+        font-size: 1.2em; \
+        font-style: italic; \
+        opacity: 0.7; \
     } \
     .season-dot-6b21a8 { background-color: #6B21A8; } \
     .season-dot-b45309 { background-color: #B45309; } \

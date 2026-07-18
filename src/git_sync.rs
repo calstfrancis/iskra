@@ -209,6 +209,56 @@ pub fn changed_files(repo_path: &Path) -> Vec<String> {
     names
 }
 
+pub struct FileHistoryEntry {
+    pub commit: String,
+    pub date: chrono::DateTime<Local>,
+    pub message: String,
+}
+
+/// Returns the commit history for a single file (newest first), relative to
+/// `repo_path`. Used by the in-app history browser to list past versions of
+/// the open sermon without shelling out again per row.
+pub fn file_history(repo_path: &Path, file_path: &Path) -> Vec<FileHistoryEntry> {
+    let Ok(rel) = file_path.strip_prefix(repo_path) else {
+        return Vec::new();
+    };
+    let Ok(out) = git_cmd(repo_path)
+        .args(["log", "--follow", "--format=%H%x1f%aI%x1f%s", "--"])
+        .arg(rel)
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '\u{1f}');
+            let commit = parts.next()?.to_string();
+            let date = parts.next()?;
+            let message = parts.next().unwrap_or("").to_string();
+            let date = chrono::DateTime::parse_from_rfc3339(date)
+                .ok()?
+                .with_timezone(&Local);
+            Some(FileHistoryEntry { commit, date, message })
+        })
+        .collect()
+}
+
+/// Returns the file's contents as of the given commit, relative to
+/// `repo_path`.
+pub fn show_file_at_commit(repo_path: &Path, file_path: &Path, commit: &str) -> Option<String> {
+    let rel = file_path.strip_prefix(repo_path).ok()?;
+    let spec = format!("{commit}:{}", path_str(rel));
+    let out = git_cmd(repo_path).args(["show", &spec]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
 /// Build a human-readable commit message from the changed file list.
 pub fn craft_message(changed: &[String]) -> String {
     let ts = Local::now().format("%Y-%m-%d %H:%M").to_string();
@@ -498,6 +548,32 @@ mod tests {
     fn set_test_identity(path: &Path) {
         run_git(path, &["config", "user.email", "test@example.com"]).unwrap();
         run_git(path, &["config", "user.name", "Test"]).unwrap();
+    }
+
+    #[test]
+    fn file_history_lists_newest_first_and_show_file_at_commit_reads_old_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_git(&repo, &["init", "-b", "main"]).unwrap();
+        set_test_identity(&repo);
+
+        let file = repo.join("sermon.toml");
+        std::fs::write(&file, "title = \"one\"\n").unwrap();
+        run_git(&repo, &["add", "."]).unwrap();
+        run_git(&repo, &["commit", "-m", "first"]).unwrap();
+
+        std::fs::write(&file, "title = \"two\"\n").unwrap();
+        run_git(&repo, &["add", "."]).unwrap();
+        run_git(&repo, &["commit", "-m", "second"]).unwrap();
+
+        let history = file_history(&repo, &file);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].message, "second");
+        assert_eq!(history[1].message, "first");
+
+        let old_content = show_file_at_commit(&repo, &file, &history[1].commit).unwrap();
+        assert_eq!(old_content, "title = \"one\"\n");
     }
 
     #[test]

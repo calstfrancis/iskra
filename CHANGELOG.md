@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.0-dev1] — Workflow improvements: templates, preaching view, history
+
+### Added
+- Keyboard reordering: Alt+Up/Alt+Down moves the focused idea or movement, as an alternative to dragging.
+- Movement cards now have a delete button (previously only removable via the underlying command, with no UI affordance).
+- Duplicate buttons on both ideas and movements (duplicating a movement also duplicates all its ideas, each with a fresh id).
+- "New Sermon" in the library is now a menu offering built-in templates (Three-Point Expository, Narrative Arc, Topical) alongside a blank sermon.
+- Preaching View (Ctrl+Shift+P, or hamburger menu): a large-print, chrome-free fullscreen display of the sermon's movements and ideas for pulpit use.
+- A "Saved"/"Unsaved changes" indicator in the status bar, with the last-saved time.
+- A toast notification when adding a scripture tag that was also used in a past sermon, naming that sermon and its date.
+- Quick-pick tag chips: the idea/part tag popovers now show the most-frequently-used values as one-click chips when the entry is empty.
+- History… (Ctrl+Shift+H, or hamburger menu): browse past committed versions of the open sermon (via its git backup history) and restore any of them.
+- Sermons can now belong to a named series, set from the title/date popover; the library sidebar groups and filters by series.
+
+### Fixed
+- Undoing or redoing a change never marked the sermon dirty, so autosave could silently skip an undone/redone edit.
+- The command palette's "jump to movement" outline entries never actually moved focus, because a movement card's root container isn't itself focusable.
+
 ## [0.1.0-dev8] — Fast entry, drag fixes, sync robustness
 
 ### Added

@@ -46,6 +46,15 @@ impl Idea {
             expanded: false,
         }
     }
+
+    /// A copy with a fresh id, for the "Duplicate idea" action — ids must
+    /// stay unique within a sermon.
+    pub fn duplicate(&self) -> Self {
+        Self {
+            id: new_id(),
+            ..self.clone()
+        }
+    }
 }
 
 // Field order matters for TOML serialization: scalar/array values must come
@@ -70,6 +79,17 @@ impl Movement {
             ideas: Vec::new(),
         }
     }
+
+    /// A copy with a fresh id for the movement *and* every idea it
+    /// contains, for the "Duplicate movement" action — ids must stay
+    /// unique within a sermon.
+    pub fn duplicate(&self) -> Self {
+        Self {
+            id: new_id(),
+            ideas: self.ideas.iter().map(Idea::duplicate).collect(),
+            ..self.clone()
+        }
+    }
 }
 
 // `lectionary` (table) and `movements` (array of tables) must stay the last
@@ -81,6 +101,8 @@ pub struct Sermon {
     pub id: String,
     #[serde(default)]
     pub title: String,
+    #[serde(default)]
+    pub series: Option<String>,
     #[serde(default)]
     pub planned_date: Option<NaiveDate>,
     pub created: DateTime<Utc>,
@@ -106,6 +128,7 @@ impl Sermon {
             schema_version: SCHEMA_VERSION,
             id: new_id(),
             title: String::new(),
+            series: None,
             planned_date: None,
             created: now,
             modified: now,
@@ -244,6 +267,30 @@ mod tests {
         let id = s.movements[1].ideas[2].id.clone();
         assert_eq!(s.find_idea(&id), Some((1, 2)));
         assert_eq!(s.find_idea("nonexistent"), None);
+    }
+
+    #[test]
+    fn idea_duplicate_gets_a_fresh_id_but_same_content() {
+        let mut idea = Idea::new();
+        idea.text = "Original".into();
+        idea.notes = "Some notes".into();
+        let dup = idea.duplicate();
+        assert_ne!(dup.id, idea.id);
+        assert_eq!(dup.text, idea.text);
+        assert_eq!(dup.notes, idea.notes);
+    }
+
+    #[test]
+    fn movement_duplicate_gets_fresh_ids_for_itself_and_every_idea() {
+        let mut m = Movement::new(0);
+        m.ideas.push(Idea::new());
+        m.ideas.push(Idea::new());
+        let dup = m.duplicate();
+        assert_ne!(dup.id, m.id);
+        assert_eq!(dup.ideas.len(), m.ideas.len());
+        for (orig, cloned) in m.ideas.iter().zip(dup.ideas.iter()) {
+            assert_ne!(orig.id, cloned.id);
+        }
     }
 
     #[test]

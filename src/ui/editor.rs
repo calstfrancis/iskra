@@ -67,6 +67,11 @@ impl Editor {
     pub fn focus_by_name(&self, name: &str) -> bool {
         let target = if let Some(id) = name.strip_prefix("idea:") {
             format!("idea-entry:{id}")
+        } else if let Some(id) = name.strip_prefix("movement:") {
+            // The card's own root (tagged `movement:{id}`) is a plain
+            // GtkBox and isn't focusable — redirect to its name entry, same
+            // as the idea case above.
+            format!("movement-entry:{id}")
         } else {
             name.to_string()
         };
@@ -194,8 +199,8 @@ impl Editor {
         let numbering = state.borrow().sermon.numbering();
         let total_ideas: usize = numbering.len();
         let movements: Vec<Movement> = state.borrow().sermon.movements.clone();
-        let idea_tag_census: Vec<String> = state.borrow().library.idea_tag_census().into_keys().collect();
-        let part_tag_census: Vec<String> = state.borrow().library.part_tag_census().into_keys().collect();
+        let idea_tag_census: Vec<(String, usize)> = state.borrow().library.idea_tag_census().into_iter().collect();
+        let part_tag_census: Vec<(String, usize)> = state.borrow().library.part_tag_census().into_iter().collect();
 
         if total_ideas == 0 {
             let status = adw::StatusPage::new();
@@ -237,8 +242,54 @@ impl Editor {
                     let apply = apply.clone();
                     move || apply(Cmd::ToggleMovementCollapsed { id: id.clone() })
                 },
+                {
+                    let id = movement.id.clone();
+                    let state = state.clone();
+                    let apply = apply.clone();
+                    move || {
+                        let Some(idx) = state.borrow().sermon.find_movement(&id) else {
+                            return;
+                        };
+                        let movement = state.borrow().sermon.movements[idx].clone();
+                        apply(Cmd::DeleteMovement { at: idx, movement });
+                    }
+                },
+                {
+                    let id = movement.id.clone();
+                    let state = state.clone();
+                    let apply = apply.clone();
+                    let editor = self.clone();
+                    move || {
+                        let Some(idx) = state.borrow().sermon.find_movement(&id) else {
+                            return;
+                        };
+                        let dup = state.borrow().sermon.movements[idx].duplicate();
+                        let new_id = dup.id.clone();
+                        apply(Cmd::InsertMovement { at: idx + 1, movement: dup });
+                        editor.focus_by_name(&format!("movement:{new_id}"));
+                    }
+                },
+                {
+                    let id = movement.id.clone();
+                    let state = state.clone();
+                    let apply = apply.clone();
+                    let editor = self.clone();
+                    move |dir: i32| {
+                        let Some(from) = state.borrow().sermon.find_movement(&id) else {
+                            return;
+                        };
+                        let len = state.borrow().sermon.movements.len();
+                        let to = from as i32 + dir;
+                        if to < 0 || to as usize >= len {
+                            return;
+                        }
+                        apply(Cmd::MoveMovement { from, to: to as usize });
+                        editor.focus_by_name(&format!("movement:{id}"));
+                    }
+                },
             );
             card.root.set_widget_name(&format!("movement:{}", movement.id));
+            card.name_entry.set_widget_name(&format!("movement-entry:{}", movement.id));
 
             for idea in &movement.ideas {
                 let (_, _, number) = numbering[flat_idx];
@@ -361,6 +412,46 @@ impl Editor {
                                 idea: new_idea,
                             });
                             editor.focus_by_name(&format!("idea:{new_id}"));
+                        }
+                    },
+                    {
+                        let id = id.clone();
+                        let state = state.clone();
+                        let apply = apply.clone();
+                        let editor = self.clone();
+                        move || {
+                            let Some((m, i)) = state.borrow().sermon.find_idea(&id) else {
+                                return;
+                            };
+                            let dup = state.borrow().sermon.movements[m].ideas[i].duplicate();
+                            let new_id = dup.id.clone();
+                            apply(Cmd::InsertIdea {
+                                movement: m,
+                                index: i + 1,
+                                idea: dup,
+                            });
+                            editor.focus_by_name(&format!("idea:{new_id}"));
+                        }
+                    },
+                    {
+                        let id = id.clone();
+                        let state = state.clone();
+                        let apply = apply.clone();
+                        let editor = self.clone();
+                        move |dir: i32| {
+                            let Some((m, i)) = state.borrow().sermon.find_idea(&id) else {
+                                return;
+                            };
+                            let len = state.borrow().sermon.movements[m].ideas.len();
+                            let to = i as i32 + dir;
+                            if to < 0 || to as usize >= len {
+                                return;
+                            }
+                            apply(Cmd::MoveIdea {
+                                from: (m, i),
+                                to: (m, to as usize),
+                            });
+                            editor.focus_by_name(&format!("idea:{id}"));
                         }
                     },
                 );

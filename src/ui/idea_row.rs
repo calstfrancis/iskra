@@ -32,8 +32,8 @@ pub struct IdeaRowWidgets {
 pub fn build_idea_row(
     idea: &Idea,
     number: u32,
-    idea_tag_census: &[String],
-    part_tag_census: &[String],
+    idea_tag_census: &[(String, usize)],
+    part_tag_census: &[(String, usize)],
     on_text_changed: impl Fn(String) + 'static,
     on_notes_changed: impl Fn(String) + 'static,
     on_idea_tag_changed: impl Fn(String) + 'static,
@@ -41,6 +41,8 @@ pub fn build_idea_row(
     on_field_focus_out: impl Fn() + 'static,
     on_delete: impl Fn() + 'static,
     on_enter: impl Fn() + 'static,
+    on_duplicate: impl Fn() + 'static,
+    on_move: impl Fn(i32) + 'static,
 ) -> IdeaRowWidgets {
     let root = GtkBox::new(Orientation::Vertical, 2);
     root.add_css_class("idea-row");
@@ -74,6 +76,12 @@ pub fn build_idea_row(
     expander.set_active(idea.expanded);
     expander.set_tooltip_text(Some("Expand notes"));
     bar.append(&expander);
+
+    let duplicate_btn = Button::from_icon_name("edit-copy-symbolic");
+    duplicate_btn.add_css_class("flat");
+    duplicate_btn.add_css_class("idea-delete");
+    duplicate_btn.set_tooltip_text(Some("Duplicate idea"));
+    bar.append(&duplicate_btn);
 
     let delete_btn = Button::from_icon_name("user-trash-symbolic");
     delete_btn.add_css_class("flat");
@@ -166,6 +174,28 @@ pub fn build_idea_row(
         focus_ctl.connect_leave(move |_| on_field_focus_out());
         entry.add_controller(focus_ctl);
     }
+    {
+        // Alt+Up/Alt+Down reorders this idea within its movement — a
+        // keyboard alternative to dragging the grabber.
+        let key_ctl = gtk4::EventControllerKey::new();
+        key_ctl.connect_key_pressed(move |_, key, _, modifiers| {
+            if !modifiers.contains(gtk4::gdk::ModifierType::ALT_MASK) {
+                return glib::Propagation::Proceed;
+            }
+            match key {
+                gtk4::gdk::Key::Up => {
+                    on_move(-1);
+                    glib::Propagation::Stop
+                }
+                gtk4::gdk::Key::Down => {
+                    on_move(1);
+                    glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
+            }
+        });
+        entry.add_controller(key_ctl);
+    }
     notes_view.buffer().connect_changed(move |buf| {
         let (start, end) = buf.bounds();
         on_notes_changed(buf.text(&start, &end, false).to_string());
@@ -205,6 +235,7 @@ pub fn build_idea_row(
         });
     }
     delete_btn.connect_clicked(move |_| on_delete());
+    duplicate_btn.connect_clicked(move |_| on_duplicate());
 
     IdeaRowWidgets {
         root,

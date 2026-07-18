@@ -316,6 +316,16 @@ pub fn default_commands() -> Vec<PaletteItem> {
             subtitle: "Export as a .sermon file for Rubric (Ctrl+E)".into(),
         },
         PaletteItem {
+            id: "preaching_view".into(),
+            label: "Preaching View".into(),
+            subtitle: "Large-print, chrome-free pulpit display (Ctrl+Shift+P)".into(),
+        },
+        PaletteItem {
+            id: "history".into(),
+            label: "History…".into(),
+            subtitle: "Browse and restore past committed versions (Ctrl+Shift+H)".into(),
+        },
+        PaletteItem {
             id: "undo".into(),
             label: "Undo".into(),
             subtitle: "Undo the last change (Ctrl+Z)".into(),

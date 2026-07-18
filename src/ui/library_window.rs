@@ -10,15 +10,16 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, Label, ListBox, ListBoxRow, Orientation, ScrolledWindow,
-    SearchEntry, Separator, SelectionMode,
+    Align, Box as GtkBox, Button, Label, ListBox, ListBoxRow, MenuButton, Orientation, Popover,
+    ScrolledWindow, SearchEntry, Separator, SelectionMode,
 };
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::commands::SermonTagKind;
-use crate::library::LibraryIndex;
+use crate::library::{LibraryFilter, LibraryIndex};
 use crate::model::Sermon;
+use crate::sermon_templates::TEMPLATES;
 
 pub struct LibraryWindow {
     window: adw::Window,
@@ -28,10 +29,10 @@ pub struct LibraryWindow {
     empty_page: adw::StatusPage,
     sermons_dir: PathBuf,
     query: RefCell<String>,
-    tag_filter: RefCell<Option<(SermonTagKind, String)>>,
+    tag_filter: RefCell<Option<LibraryFilter>>,
     current_open: RefCell<Option<PathBuf>>,
     on_open: RefCell<Option<Box<dyn Fn(PathBuf)>>>,
-    on_new: RefCell<Option<Box<dyn Fn()>>>,
+    on_new: RefCell<Option<Box<dyn Fn(Option<String>)>>>,
     on_delete: RefCell<Option<Box<dyn Fn(PathBuf)>>>,
 }
 
@@ -45,7 +46,8 @@ impl LibraryWindow {
             .build();
 
         let header = adw::HeaderBar::new();
-        let new_btn = Button::from_icon_name("list-add-symbolic");
+        let new_btn = MenuButton::new();
+        new_btn.set_icon_name("list-add-symbolic");
         new_btn.set_tooltip_text(Some("New sermon"));
         header.pack_start(&new_btn);
 
@@ -123,12 +125,42 @@ impl LibraryWindow {
             });
         }
         {
-            let this = this.clone();
-            new_btn.connect_clicked(move |_| {
-                if let Some(f) = this.on_new.borrow().as_ref() {
-                    f();
-                }
-            });
+            let popover_box = GtkBox::new(Orientation::Vertical, 0);
+            popover_box.set_margin_top(4);
+            popover_box.set_margin_bottom(4);
+            popover_box.set_margin_start(4);
+            popover_box.set_margin_end(4);
+            let popover = Popover::new();
+            popover.set_child(Some(&popover_box));
+
+            let blank_btn = new_sermon_menu_row("Blank Sermon", None);
+            popover_box.append(&blank_btn);
+            popover_box.append(&Separator::new(Orientation::Horizontal));
+            for template in TEMPLATES {
+                let row = new_sermon_menu_row(template.name, Some(template.description));
+                popover_box.append(&row);
+                let this = this.clone();
+                let popover = popover.clone();
+                let template_id = template.id.to_string();
+                row.connect_clicked(move |_| {
+                    popover.popdown();
+                    if let Some(f) = this.on_new.borrow().as_ref() {
+                        f(Some(template_id.clone()));
+                    }
+                });
+            }
+            {
+                let this = this.clone();
+                let popover = popover.clone();
+                blank_btn.connect_clicked(move |_| {
+                    popover.popdown();
+                    if let Some(f) = this.on_new.borrow().as_ref() {
+                        f(None);
+                    }
+                });
+            }
+
+            new_btn.set_popover(Some(&popover));
         }
 
         this
@@ -138,7 +170,7 @@ impl LibraryWindow {
         *self.on_open.borrow_mut() = Some(Box::new(f));
     }
 
-    pub fn set_on_new(&self, f: impl Fn() + 'static) {
+    pub fn set_on_new(&self, f: impl Fn(Option<String>) + 'static) {
         *self.on_new.borrow_mut() = Some(Box::new(f));
     }
 
@@ -192,7 +224,7 @@ impl LibraryWindow {
             let this = self.clone();
             let tag_clone = tag.clone();
             btn.connect_clicked(move |_| {
-                *this.tag_filter.borrow_mut() = Some((SermonTagKind::S, tag_clone.clone()));
+                *this.tag_filter.borrow_mut() = Some(LibraryFilter::Tag(SermonTagKind::S, tag_clone.clone()));
                 this.rebuild_sermon_list();
             });
             self.tag_sidebar.append(&btn);
@@ -204,10 +236,25 @@ impl LibraryWindow {
             let this = self.clone();
             let tag_clone = tag.clone();
             btn.connect_clicked(move |_| {
-                *this.tag_filter.borrow_mut() = Some((SermonTagKind::T, tag_clone.clone()));
+                *this.tag_filter.borrow_mut() = Some(LibraryFilter::Tag(SermonTagKind::T, tag_clone.clone()));
                 this.rebuild_sermon_list();
             });
             self.tag_sidebar.append(&btn);
+        }
+
+        let series_census = index.series_census();
+        if !series_census.is_empty() {
+            self.tag_sidebar.append(&group_header("Series"));
+            for (series, count) in series_census {
+                let btn = tag_row(&series, Some(count));
+                let this = self.clone();
+                let series_clone = series.clone();
+                btn.connect_clicked(move |_| {
+                    *this.tag_filter.borrow_mut() = Some(LibraryFilter::Series(series_clone.clone()));
+                    this.rebuild_sermon_list();
+                });
+                self.tag_sidebar.append(&btn);
+            }
         }
     }
 
@@ -219,8 +266,7 @@ impl LibraryWindow {
         let index = LibraryIndex::scan(&self.sermons_dir);
         let query = self.query.borrow().clone();
         let tag_filter = self.tag_filter.borrow().clone();
-        let tag_filter_ref = tag_filter.as_ref().map(|(k, t)| (*k, t.as_str()));
-        let results = index.filter(&query, tag_filter_ref);
+        let results = index.filter(&query, tag_filter.as_ref());
         let current_open = self.current_open.borrow().clone();
 
         self.empty_page.set_visible(results.is_empty());
@@ -245,8 +291,7 @@ impl LibraryWindow {
                 let entries = LibraryIndex::scan(&this.sermons_dir);
                 let query = this.query.borrow().clone();
                 let tag_filter = this.tag_filter.borrow().clone();
-                let tag_filter_ref = tag_filter.as_ref().map(|(k, t)| (*k, t.as_str()));
-                let results = entries.filter(&query, tag_filter_ref);
+                let results = entries.filter(&query, tag_filter.as_ref());
                 if let Some((path, _)) = results.get(index_u) {
                     if let Some(f) = this.on_open.borrow().as_ref() {
                         f(path.clone());
@@ -256,6 +301,33 @@ impl LibraryWindow {
             });
         }
     }
+}
+
+fn new_sermon_menu_row(name: &str, description: Option<&str>) -> Button {
+    let col = GtkBox::new(Orientation::Vertical, 1);
+    col.set_margin_top(4);
+    col.set_margin_bottom(4);
+    col.set_margin_start(8);
+    col.set_margin_end(8);
+
+    let name_lbl = Label::new(Some(name));
+    name_lbl.set_xalign(0.0);
+    col.append(&name_lbl);
+
+    if let Some(desc) = description {
+        let desc_lbl = Label::new(Some(desc));
+        desc_lbl.add_css_class("dim-label");
+        desc_lbl.add_css_class("caption");
+        desc_lbl.set_xalign(0.0);
+        desc_lbl.set_wrap(true);
+        col.append(&desc_lbl);
+    }
+
+    let btn = Button::new();
+    btn.set_child(Some(&col));
+    btn.add_css_class("flat");
+    btn.set_halign(Align::Fill);
+    btn
 }
 
 fn group_header(text: &str) -> Label {

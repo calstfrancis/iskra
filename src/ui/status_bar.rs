@@ -18,6 +18,7 @@ pub struct StatusBar {
     pub version_btn: Button,
     s_tags_box: GtkBox,
     t_tags_box: GtkBox,
+    saved_label: Label,
     apply: RefCell<Option<ApplyFn>>,
 }
 
@@ -53,6 +54,11 @@ impl StatusBar {
         spacer.set_hexpand(true);
         root.append(&spacer);
 
+        let saved_label = Label::new(Some("Saved"));
+        saved_label.add_css_class("dim-label");
+        saved_label.add_css_class("caption");
+        root.append(&saved_label);
+
         let sep = Separator::new(Orientation::Vertical);
         sep.add_css_class("statusbar-sep");
         root.append(&sep);
@@ -69,6 +75,7 @@ impl StatusBar {
             version_btn,
             s_tags_box,
             t_tags_box,
+            saved_label,
             apply: RefCell::new(None),
         })
     }
@@ -84,6 +91,19 @@ impl StatusBar {
         let Some(apply) = apply else { return };
         rebuild_tag_group(&self.s_tags_box, &sermon.s_tags, SermonTagKind::S, &apply);
         rebuild_tag_group(&self.t_tags_box, &sermon.t_tags, SermonTagKind::T, &apply);
+    }
+
+    /// Called the instant a change is made, before the debounced autosave
+    /// actually runs — so "Unsaved changes" shows immediately rather than
+    /// lagging behind the edit by the autosave debounce window.
+    pub fn set_dirty(&self) {
+        self.saved_label.set_text("● Unsaved changes");
+    }
+
+    /// Called when autosave completes successfully.
+    pub fn set_saved(&self) {
+        let now = chrono::Local::now().format("%-I:%M %p");
+        self.saved_label.set_text(&format!("Saved {now}"));
     }
 }
 

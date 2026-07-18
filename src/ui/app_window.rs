@@ -7,7 +7,7 @@ use gtk4::{Box as GtkBox, Button, Label, MenuButton, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::commands::Cmd;
+use crate::commands::{Cmd, SermonTagKind};
 use crate::config::Config;
 use crate::git_sync;
 use crate::library::LibraryIndex;
@@ -19,8 +19,10 @@ use crate::ui::changelog_window::show_changelog;
 use crate::ui::command_palette::{default_commands, outline_items, CommandPalette};
 use crate::ui::editor::{ApplyFn, Editor};
 use crate::ui::export_dialog::ExportDialog;
+use crate::ui::history_window::HistoryWindow;
 use crate::ui::lectionary_panel::LectionaryPanel;
 use crate::ui::library_window::LibraryWindow;
+use crate::ui::preaching_view::PreachingView;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::styles;
 use crate::ui::title_date_popover::TitleDatePopover;
@@ -73,6 +75,10 @@ impl AppWindow {
         menu_box.set_margin_end(6);
         let export_item = make_menu_item("Export…", "Ctrl+E");
         menu_box.append(&export_item);
+        let preaching_view_item = make_menu_item("Preaching View", "Ctrl+Shift+P");
+        menu_box.append(&preaching_view_item);
+        let history_item = make_menu_item("History…", "Ctrl+Shift+H");
+        menu_box.append(&history_item);
         let show_folder_item = make_menu_item("Show Sermons Folder", "");
         show_folder_item.set_tooltip_text(Some(&state.borrow().config.sermons_dir().display().to_string()));
         menu_box.append(&show_folder_item);
@@ -147,12 +153,7 @@ impl AppWindow {
         {
             let state = state.clone();
             undo_btn.connect_clicked(move |_| {
-                let changed = {
-                    let mut st = state.borrow_mut();
-                    let AppState { undo, sermon, .. } = &mut *st;
-                    undo.undo(sermon)
-                };
-                if changed {
+                if perform_undo(&state) {
                     force_full_refresh(&state);
                 }
             });
@@ -160,12 +161,7 @@ impl AppWindow {
         {
             let state = state.clone();
             redo_btn.connect_clicked(move |_| {
-                let changed = {
-                    let mut st = state.borrow_mut();
-                    let AppState { undo, sermon, .. } = &mut *st;
-                    undo.redo(sermon)
-                };
-                if changed {
+                if perform_redo(&state) {
                     force_full_refresh(&state);
                 }
             });
@@ -200,9 +196,10 @@ impl AppWindow {
                     title_date.refresh(&state.borrow().sermon);
                     lectionary_panel.refresh(&state.borrow().sermon);
                     status_bar.refresh(&state.borrow().sermon);
+                    status_bar.set_dirty();
                     undo_btn.set_sensitive(state.borrow().undo.can_undo());
                     redo_btn.set_sensitive(state.borrow().undo.can_redo());
-                    arm_autosave(&state, &toast_overlay, &autosave_pending);
+                    arm_autosave(&state, &toast_overlay, &status_bar, &autosave_pending);
                 }));
             });
         }
@@ -221,23 +218,13 @@ impl AppWindow {
                 let ctrl = modifiers.contains(ModifierType::CONTROL_MASK);
                 let shift = modifiers.contains(ModifierType::SHIFT_MASK);
                 if ctrl && key == gtk4::gdk::Key::z && !shift {
-                    let changed = {
-                        let mut st = state.borrow_mut();
-                        let AppState { undo, sermon, .. } = &mut *st;
-                        undo.undo(sermon)
-                    };
-                    if changed {
+                    if perform_undo(&state) {
                         force_full_refresh(&state);
                     }
                     return glib::Propagation::Stop;
                 }
                 if ctrl && shift && key == gtk4::gdk::Key::Z {
-                    let changed = {
-                        let mut st = state.borrow_mut();
-                        let AppState { undo, sermon, .. } = &mut *st;
-                        undo.redo(sermon)
-                    };
-                    if changed {
+                    if perform_redo(&state) {
                         force_full_refresh(&state);
                     }
                     return glib::Propagation::Stop;
@@ -275,6 +262,54 @@ impl AppWindow {
                     && key == gtk4::gdk::Key::e
                 {
                     ExportDialog::new(&win_for_closure, state.borrow().sermon.clone()).present();
+                    return glib::Propagation::Stop;
+                }
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK)
+                    && key == gtk4::gdk::Key::P
+                {
+                    PreachingView::new(&win_for_closure, &state.borrow().sermon).present();
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            window.add_controller(ctl);
+        }
+
+        // ── Hamburger menu: Preaching View ────────────────────────────────
+        {
+            let state = state.clone();
+            let menu_popover = menu_popover.clone();
+            let window = window.clone();
+            preaching_view_item.connect_clicked(move |_| {
+                menu_popover.popdown();
+                PreachingView::new(&window, &state.borrow().sermon).present();
+            });
+        }
+
+        // ── Hamburger menu: History… ───────────────────────────────────────
+        {
+            let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
+            let menu_popover = menu_popover.clone();
+            let window = window.clone();
+            history_item.connect_clicked(move |_| {
+                menu_popover.popdown();
+                open_history_window(&window, &state, &toast_overlay);
+            });
+        }
+        {
+            let win_for_closure = window.clone();
+            let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
+            let ctl = gtk4::EventControllerKey::new();
+            ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            ctl.connect_key_pressed(move |_, key, _, modifiers| {
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK)
+                    && key == gtk4::gdk::Key::H
+                {
+                    open_history_window(&win_for_closure, &state, &toast_overlay);
                     return glib::Propagation::Stop;
                 }
                 glib::Propagation::Proceed
@@ -384,12 +419,12 @@ impl AppWindow {
                 lw.window().close();
             });
         }
-        let create_new_sermon: Rc<dyn Fn()> = {
+        let create_new_sermon: Rc<dyn Fn(Option<String>)> = {
             let state = state.clone();
             let toast_overlay = toast_overlay.clone();
             let lw = library_window.clone();
-            Rc::new(move || {
-                let sermon = Sermon::new();
+            Rc::new(move |template_id: Option<String>| {
+                let sermon = crate::sermon_templates::build_sermon(template_id.as_deref());
                 let path = storage::new_sermon_path(&state.borrow().config.sermons_dir(), &sermon);
                 match storage::save_sermon(&path, &sermon) {
                     Ok(()) => {
@@ -407,7 +442,7 @@ impl AppWindow {
         };
         {
             let create_new_sermon = create_new_sermon.clone();
-            library_window.set_on_new(move || create_new_sermon());
+            library_window.set_on_new(move |template_id| create_new_sermon(template_id));
         }
         {
             let state = state.clone();
@@ -457,29 +492,24 @@ impl AppWindow {
             let window = window.clone();
             let split_view = split_view.clone();
             let create_new_sermon = create_new_sermon.clone();
+            let toast_overlay = toast_overlay.clone();
             palette.set_on_activate(move |id| match id {
-                "new_sermon" => create_new_sermon(),
+                "new_sermon" => create_new_sermon(None),
                 "open_library" => library_window.present(),
                 "export" => {
                     ExportDialog::new(&window, state.borrow().sermon.clone()).present();
                 }
+                "preaching_view" => {
+                    PreachingView::new(&window, &state.borrow().sermon).present();
+                }
+                "history" => open_history_window(&window, &state, &toast_overlay),
                 "undo" => {
-                    let changed = {
-                        let mut st = state.borrow_mut();
-                        let AppState { undo, sermon, .. } = &mut *st;
-                        undo.undo(sermon)
-                    };
-                    if changed {
+                    if perform_undo(&state) {
                         force_full_refresh(&state);
                     }
                 }
                 "redo" => {
-                    let changed = {
-                        let mut st = state.borrow_mut();
-                        let AppState { undo, sermon, .. } = &mut *st;
-                        undo.redo(sermon)
-                    };
-                    if changed {
+                    if perform_redo(&state) {
                         force_full_refresh(&state);
                     }
                 }
@@ -628,6 +658,74 @@ fn force_full_refresh(_state: &Rc<RefCell<AppState>>) {
     });
 }
 
+/// Undo/redo mutate `sermon` directly rather than through `apply()`, so they
+/// need their own `dirty` marking — without this, undoing or redoing a
+/// change was never picked up by autosave (a real bug: `dirty` was only ever
+/// set by `apply()`'s `Cmd` path, so an undo could silently go unsaved).
+fn perform_undo(state: &Rc<RefCell<AppState>>) -> bool {
+    let mut st = state.borrow_mut();
+    let AppState { undo, sermon, .. } = &mut *st;
+    let changed = undo.undo(sermon);
+    if changed {
+        st.dirty = true;
+    }
+    changed
+}
+
+fn open_history_window(
+    window: &adw::ApplicationWindow,
+    state: &Rc<RefCell<AppState>>,
+    toast_overlay: &adw::ToastOverlay,
+) {
+    let (repo_path, file_path) = {
+        let st = state.borrow();
+        (st.config.work_dir.clone(), st.path.clone())
+    };
+    let state = state.clone();
+    let toast_overlay = toast_overlay.clone();
+    let history = HistoryWindow::new(window, repo_path, file_path, move |content| {
+        if restore_sermon_version(&state, &toast_overlay, content) {
+            force_full_refresh(&state);
+        }
+    });
+    history.present();
+}
+
+/// Replaces the open sermon in-memory with a historical version restored
+/// from git (see `HistoryWindow`) — mirrors undo/redo's direct-mutation
+/// pattern (bypasses `apply()`, since there's no single `Cmd` for "load an
+/// entirely different sermon") so the change flows through the same
+/// `force_full_refresh` + autosave path afterward.
+fn restore_sermon_version(
+    state: &Rc<RefCell<AppState>>,
+    toast_overlay: &adw::ToastOverlay,
+    content: String,
+) -> bool {
+    let sermon: Sermon = match toml::from_str(&content) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("failed to parse historical sermon version: {e}");
+            show_toast(toast_overlay, "Couldn't restore that version — the file may be corrupt");
+            return false;
+        }
+    };
+    let mut st = state.borrow_mut();
+    st.sermon = sermon;
+    st.undo = crate::commands::UndoStack::new();
+    st.dirty = true;
+    true
+}
+
+fn perform_redo(state: &Rc<RefCell<AppState>>) -> bool {
+    let mut st = state.borrow_mut();
+    let AppState { undo, sermon, .. } = &mut *st;
+    let changed = undo.redo(sermon);
+    if changed {
+        st.dirty = true;
+    }
+    changed
+}
+
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn make_apply(
@@ -652,12 +750,14 @@ fn make_apply(
     let autosave_pending = autosave_pending.clone();
     Rc::new(move |cmd: Cmd| {
         let structural = cmd.is_structural();
+        note_past_sermon_reuse(&cmd, &state, &toast_overlay);
         {
             let mut st = state.borrow_mut();
             let AppState { undo, sermon, .. } = &mut *st;
             undo.push_applying(sermon, cmd);
             st.dirty = true;
         }
+        status_bar.set_dirty();
         if structural {
             let recurse = make_apply(
                 &state,
@@ -677,7 +777,7 @@ fn make_apply(
         status_bar.refresh(&state.borrow().sermon);
         undo_btn.set_sensitive(state.borrow().undo.can_undo());
         redo_btn.set_sensitive(state.borrow().undo.can_redo());
-        arm_autosave(&state, &toast_overlay, &autosave_pending);
+        arm_autosave(&state, &toast_overlay, &status_bar, &autosave_pending);
     })
 }
 
@@ -685,9 +785,45 @@ fn show_toast(overlay: &adw::ToastOverlay, message: &str) {
     overlay.add_toast(adw::Toast::new(message));
 }
 
+/// When a scripture (s.) tag is added, checks whether any *other* sermon in
+/// the library already used it, and surfaces a toast naming it — so
+/// repeating a passage is a deliberate choice, not an accident nobody
+/// noticed. Only fires on genuinely new tags (not on removal), and only
+/// scripture tags (`s.`), not theme (`t.`) tags — a repeated theme is far
+/// more common and expected than a repeated passage.
+fn note_past_sermon_reuse(cmd: &Cmd, state: &Rc<RefCell<AppState>>, toast_overlay: &adw::ToastOverlay) {
+    let Cmd::SetSermonTags { kind: SermonTagKind::S, old, new } = cmd else {
+        return;
+    };
+    let added = new.iter().find(|t| !old.contains(t));
+    let Some(tag) = added else {
+        return;
+    };
+
+    let st = state.borrow();
+    let current_id = &st.sermon.id;
+    let found = st
+        .library
+        .sermons
+        .iter()
+        .find(|(_, s)| &s.id != current_id && s.s_tags.iter().any(|t| t == tag));
+
+    if let Some((_, sermon)) = found {
+        let date = sermon
+            .planned_date
+            .map(|d| d.format("%B %-d, %Y").to_string())
+            .unwrap_or_else(|| "an earlier sermon".to_string());
+        let title = sermon.display_title().to_string();
+        let tag = tag.clone();
+        drop(st);
+        show_toast(toast_overlay, &format!("You've also preached on \"{tag}\" — {title} ({date})"));
+    }
+}
+
 fn arm_autosave(
     state: &Rc<RefCell<AppState>>,
     toast_overlay: &adw::ToastOverlay,
+    status_bar: &Rc<StatusBar>,
     pending: &Rc<Cell<Option<glib::SourceId>>>,
 ) {
     if let Some(id) = pending.take() {
@@ -696,6 +832,7 @@ fn arm_autosave(
     let debounce_ms = state.borrow().config.autosave_debounce_ms;
     let state = state.clone();
     let toast_overlay = toast_overlay.clone();
+    let status_bar = status_bar.clone();
     let pending_for_cb = pending.clone();
     let id = glib::timeout_add_local_once(Duration::from_millis(debounce_ms), move || {
         pending_for_cb.set(None);
@@ -706,6 +843,7 @@ fn arm_autosave(
                 Ok(()) => {
                     st.dirty = false;
                     st.library = crate::library::LibraryIndex::scan(&st.config.sermons_dir());
+                    status_bar.set_saved();
                 }
                 Err(e) => {
                     tracing::warn!("autosave failed for {}: {e}", path.display());

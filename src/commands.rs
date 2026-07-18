@@ -73,6 +73,10 @@ pub enum Cmd {
         old: String,
         new: String,
     },
+    SetSeries {
+        old: Option<String>,
+        new: Option<String>,
+    },
     SetPlannedDate {
         old: (Option<chrono::NaiveDate>, Option<crate::model::LectionaryLink>),
         new: (Option<chrono::NaiveDate>, Option<crate::model::LectionaryLink>),
@@ -95,6 +99,7 @@ enum CoalesceKey {
     IdeaNotes(String),
     MovementName(String),
     Title,
+    Series,
 }
 
 impl Cmd {
@@ -150,6 +155,9 @@ impl Cmd {
             }
             Cmd::SetTitle { new, .. } => {
                 s.title = new.clone();
+            }
+            Cmd::SetSeries { new, .. } => {
+                s.series = new.clone();
             }
             Cmd::SetPlannedDate { new, .. } => {
                 s.planned_date = new.0;
@@ -225,6 +233,10 @@ impl Cmd {
                 old: new.clone(),
                 new: old.clone(),
             },
+            Cmd::SetSeries { old, new } => Cmd::SetSeries {
+                old: new.clone(),
+                new: old.clone(),
+            },
             Cmd::SetPlannedDate { old, new } => Cmd::SetPlannedDate {
                 old: new.clone(),
                 new: old.clone(),
@@ -249,6 +261,7 @@ impl Cmd {
             | Cmd::EditIdeaNotes { .. }
             | Cmd::SetIdeaTag { .. }
             | Cmd::SetTitle { .. }
+            | Cmd::SetSeries { .. }
             | Cmd::SetSermonTags { .. } => false,
             Cmd::RenameMovement { .. } => false,
             Cmd::Composite(cmds) => cmds.iter().any(Cmd::is_structural),
@@ -262,6 +275,7 @@ impl Cmd {
             Cmd::EditIdeaNotes { id, .. } => Some(CoalesceKey::IdeaNotes(id.clone())),
             Cmd::RenameMovement { id, .. } => Some(CoalesceKey::MovementName(id.clone())),
             Cmd::SetTitle { .. } => Some(CoalesceKey::Title),
+            Cmd::SetSeries { .. } => Some(CoalesceKey::Series),
             _ => None,
         }
     }
@@ -381,6 +395,9 @@ fn merge_into(top: &mut Cmd, next: &Cmd) {
             *new = next_new.clone();
         }
         (Cmd::SetTitle { new, .. }, Cmd::SetTitle { new: next_new, .. }) => {
+            *new = next_new.clone();
+        }
+        (Cmd::SetSeries { new, .. }, Cmd::SetSeries { new: next_new, .. }) => {
             *new = next_new.clone();
         }
         _ => unreachable!("merge_into called on incompatible/non-coalescable command pair"),

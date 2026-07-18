@@ -27,16 +27,23 @@ use crate::ui::styles;
 
 pub struct TitleDatePopover {
     pub button: MenuButton,
+    series_label: Label,
     title_label: Label,
     date_label: Label,
     dot: GtkBox,
     title_entry: Entry,
+    series_entry: Entry,
     calendar: Calendar,
     clear_btn: Button,
 }
 
 impl TitleDatePopover {
     pub fn new(sermon: &Sermon) -> Rc<Self> {
+        let series_label = Label::new(sermon.series.as_deref());
+        series_label.add_css_class("dim-label");
+        series_label.add_css_class("caption");
+        series_label.set_visible(sermon.series.is_some());
+
         let title_label = Label::new(Some(sermon.display_title()));
         title_label.add_css_class("title");
         title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
@@ -58,6 +65,7 @@ impl TitleDatePopover {
 
         let content = GtkBox::new(Orientation::Vertical, 1);
         content.set_valign(gtk4::Align::Center);
+        content.append(&series_label);
         content.append(&title_label);
         content.append(&subtitle_row);
 
@@ -77,6 +85,11 @@ impl TitleDatePopover {
         title_entry.set_text(&sermon.title);
         popover_body.append(&title_entry);
 
+        let series_entry = Entry::new();
+        series_entry.set_placeholder_text(Some("Series (optional)…"));
+        series_entry.set_text(sermon.series.as_deref().unwrap_or(""));
+        popover_body.append(&series_entry);
+
         let calendar = Calendar::new();
         if let Some(d) = sermon.planned_date {
             select_calendar_date(&calendar, d);
@@ -95,10 +108,12 @@ impl TitleDatePopover {
 
         Rc::new(Self {
             button,
+            series_label,
             title_label,
             date_label,
             dot,
             title_entry,
+            series_entry,
             calendar,
             clear_btn,
         })
@@ -127,6 +142,24 @@ impl TitleDatePopover {
         {
             let state = state.clone();
             let apply = apply.clone();
+            self.series_entry.connect_changed(move |e| {
+                let old = state.borrow().sermon.series.clone();
+                let text = e.text().to_string();
+                let new = if text.trim().is_empty() { None } else { Some(text) };
+                if old != new {
+                    apply(Cmd::SetSeries { old, new });
+                }
+            });
+        }
+        {
+            let state = state.clone();
+            let focus_ctl = gtk4::EventControllerFocus::new();
+            focus_ctl.connect_leave(move |_| state.borrow_mut().undo.break_coalescing());
+            self.series_entry.add_controller(focus_ctl);
+        }
+        {
+            let state = state.clone();
+            let apply = apply.clone();
             let clear_btn = self.clear_btn.clone();
             self.calendar.connect_day_selected(move |cal| {
                 clear_btn.set_visible(true);
@@ -149,9 +182,20 @@ impl TitleDatePopover {
     /// call after every `apply()` — resetting the calendar's selection to a
     /// date it already shows is a no-op from the user's perspective.
     pub fn refresh(&self, sermon: &Sermon) {
+        match &sermon.series {
+            Some(series) => {
+                self.series_label.set_text(series);
+                self.series_label.set_visible(true);
+            }
+            None => self.series_label.set_visible(false),
+        }
         self.title_label.set_text(sermon.display_title());
         if self.title_entry.text() != sermon.title {
             self.title_entry.set_text(&sermon.title);
+        }
+        let series_text = sermon.series.as_deref().unwrap_or("");
+        if self.series_entry.text() != series_text {
+            self.series_entry.set_text(series_text);
         }
 
         match sermon.planned_date {

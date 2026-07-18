@@ -8,6 +8,7 @@ mod model;
 mod rcl;
 mod secret_store;
 mod sermon_export;
+mod sermon_templates;
 mod state;
 mod storage;
 mod ui;

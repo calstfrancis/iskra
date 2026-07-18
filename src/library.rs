@@ -12,6 +12,14 @@ use crate::commands::SermonTagKind;
 use crate::model::Sermon;
 use crate::storage;
 
+/// A sidebar selection in the library window — either a tag or a series,
+/// mutually exclusive with each other and with the free-text search.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LibraryFilter {
+    Tag(SermonTagKind, String),
+    Series(String),
+}
+
 pub struct LibraryIndex {
     pub sermons: Vec<(PathBuf, Sermon)>,
 }
@@ -26,13 +34,18 @@ impl LibraryIndex {
     /// Every sermon whose title, idea/note text, movement names, tags,
     /// secular date, or lectionary week contains `query` (case-insensitive).
     /// An empty query matches everything.
-    pub fn filter<'a>(&'a self, query: &str, tag: Option<(SermonTagKind, &str)>) -> Vec<&'a (PathBuf, Sermon)> {
+    pub fn filter<'a>(&'a self, query: &str, filter: Option<&LibraryFilter>) -> Vec<&'a (PathBuf, Sermon)> {
         let query = query.trim().to_lowercase();
         self.sermons
             .iter()
-            .filter(|(_, s)| tag.is_none_or(|(kind, t)| sermon_has_tag(s, kind, t)))
+            .filter(|(_, s)| filter.is_none_or(|f| sermon_matches_filter(s, f)))
             .filter(|(_, s)| query.is_empty() || sermon_matches(s, &query))
             .collect()
+    }
+
+    /// Series names in use, with occurrence counts, for the library sidebar.
+    pub fn series_census(&self) -> BTreeMap<String, usize> {
+        census(self.sermons.iter().filter_map(|(_, s)| s.series.as_ref()))
     }
 
     /// Scripture (s.) tag census with occurrence counts, for the library
@@ -76,10 +89,11 @@ fn census<'a>(values: impl Iterator<Item = &'a String>) -> BTreeMap<String, usiz
     out
 }
 
-fn sermon_has_tag(s: &Sermon, kind: SermonTagKind, tag: &str) -> bool {
-    match kind {
-        SermonTagKind::S => s.s_tags.iter().any(|t| t == tag),
-        SermonTagKind::T => s.t_tags.iter().any(|t| t == tag),
+fn sermon_matches_filter(s: &Sermon, filter: &LibraryFilter) -> bool {
+    match filter {
+        LibraryFilter::Tag(SermonTagKind::S, tag) => s.s_tags.iter().any(|t| t == tag),
+        LibraryFilter::Tag(SermonTagKind::T, tag) => s.t_tags.iter().any(|t| t == tag),
+        LibraryFilter::Series(series) => s.series.as_deref() == Some(series.as_str()),
     }
 }
 
@@ -130,6 +144,7 @@ mod tests {
         a.title = "Fruit in Season".into();
         a.s_tags = vec!["Luke 13".into()];
         a.t_tags = vec!["repentance".into()];
+        a.series = Some("Parables".into());
         let mut idea = Idea::new();
         idea.text = "The fig tree is not condemned yet".into();
         idea.idea_tag = "image".into();
@@ -172,8 +187,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         seeded(dir.path());
         let idx = LibraryIndex::scan(dir.path());
-        assert_eq!(idx.filter("", Some((SermonTagKind::T, "repentance"))).len(), 2);
-        assert_eq!(idx.filter("", Some((SermonTagKind::S, "Luke 13"))).len(), 1);
+        assert_eq!(
+            idx.filter("", Some(&LibraryFilter::Tag(SermonTagKind::T, "repentance".into()))).len(),
+            2
+        );
+        assert_eq!(
+            idx.filter("", Some(&LibraryFilter::Tag(SermonTagKind::S, "Luke 13".into()))).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn series_census_and_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        seeded(dir.path());
+        let idx = LibraryIndex::scan(dir.path());
+        assert_eq!(idx.series_census().get("Parables"), Some(&1));
+        assert_eq!(
+            idx.filter("", Some(&LibraryFilter::Series("Parables".into()))).len(),
+            1
+        );
+        assert_eq!(
+            idx.filter("", Some(&LibraryFilter::Series("Nonexistent".into()))).len(),
+            0
+        );
     }
 
     #[test]
