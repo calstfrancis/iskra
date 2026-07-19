@@ -22,6 +22,7 @@ use crate::ui::export_dialog::ExportDialog;
 use crate::ui::history_window::HistoryWindow;
 use crate::ui::lectionary_panel::LectionaryPanel;
 use crate::ui::library_window::LibraryWindow;
+use crate::ui::preaching_print;
 use crate::ui::preaching_view::PreachingView;
 use crate::ui::status_bar::{DeletedEntry, StatusBar};
 use crate::ui::styles;
@@ -77,6 +78,8 @@ impl AppWindow {
         menu_box.append(&export_item);
         let preaching_view_item = make_menu_item("Preaching View", "Ctrl+Shift+P");
         menu_box.append(&preaching_view_item);
+        let print_item = make_menu_item("Print Sermon…", "Ctrl+P");
+        menu_box.append(&print_item);
         let history_item = make_menu_item("History…", "Ctrl+Shift+H");
         menu_box.append(&history_item);
         let show_folder_item = make_menu_item("Show Sermons Folder", "");
@@ -286,6 +289,13 @@ impl AppWindow {
                     PreachingView::new(&win_for_closure, &state).present();
                     return glib::Propagation::Stop;
                 }
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && !modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK)
+                    && key == gtk4::gdk::Key::p
+                {
+                    preaching_print::print_sermon(&win_for_closure, &state);
+                    return glib::Propagation::Stop;
+                }
                 glib::Propagation::Proceed
             });
             window.add_controller(ctl);
@@ -299,6 +309,17 @@ impl AppWindow {
             preaching_view_item.connect_clicked(move |_| {
                 menu_popover.popdown();
                 PreachingView::new(&window, &state).present();
+            });
+        }
+
+        // ── Hamburger menu: Print Sermon… ──────────────────────────────────
+        {
+            let state = state.clone();
+            let menu_popover = menu_popover.clone();
+            let window = window.clone();
+            print_item.connect_clicked(move |_| {
+                menu_popover.popdown();
+                preaching_print::print_sermon(&window, &state);
             });
         }
 
@@ -516,6 +537,9 @@ impl AppWindow {
                 }
                 "preaching_view" => {
                     PreachingView::new(&window, &state).present();
+                }
+                "print_sermon" => {
+                    preaching_print::print_sermon(&window, &state);
                 }
                 "history" => open_history_window(&window, &state, &toast_overlay),
                 "undo" => {

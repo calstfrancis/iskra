@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Orientation, Revealer, RevealerTransitionType, ToggleButton};
+use gtk4::{Box as GtkBox, Button, Label, Orientation, Revealer, RevealerTransitionType, ToggleButton};
 
 use crate::model::Movement;
 use crate::ui::dnd;
@@ -51,6 +51,23 @@ pub fn build_movement_card(
     name_entry.set_hexpand(true);
     name_entry.set_text(&movement.name);
     header.append(&name_entry);
+
+    // Collapsing hides the ideas box entirely — without some hint of what's
+    // inside, a collapsed movement with real content looks the same as an
+    // empty one. Only shown while collapsed (toggling always triggers a
+    // full rebuild — see `Cmd::is_structural` — so this never needs to
+    // change live within one card's lifetime).
+    if movement.collapsed {
+        let count = movement.ideas.len();
+        let badge = Label::new(Some(&format!(
+            "{count} idea{}",
+            if count == 1 { "" } else { "s" }
+        )));
+        badge.add_css_class("dim-label");
+        badge.add_css_class("caption");
+        badge.add_css_class("movement-idea-count-badge");
+        header.append(&badge);
+    }
 
     let collapse_btn = ToggleButton::new();
     collapse_btn.set_icon_name(if movement.collapsed {

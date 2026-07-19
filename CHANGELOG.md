@@ -5,9 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.1-dev3] — Movement tools, multi-select, and workflow shortcuts
+## [0.2.1-dev4] — Movement tools, multi-select, and workflow shortcuts
 
 ### Added
+- "Print Sermon…" is now reachable from the hamburger menu, the command palette (Ctrl+K), and Ctrl+P from the main editor window — previously only a small icon button and Ctrl+P inside Preaching View itself.
+- Preaching View: a thin liturgical-color strip when a date is planned, a scroll-synced row of movement progress dots, idea numbering, and a warm/cream background toggle (remembered per machine).
+- Collapsed movements show an idea-count badge ("3 ideas") in the header, since collapsing hides the ideas box entirely and previously gave no hint of what was inside.
 - Right-click blank space in a movement to split it: everything from that point down moves into a new movement inserted right below.
 - Multi-select ideas within a movement via rubber-band drag, or Ctrl/Shift-click on an idea's number. Selected ideas can be dragged together, and bulk-deleted with Delete/BackSpace or a right-click "Delete N ideas" menu item.
 - "Merge with movement above" button on every movement (disabled on the first one) — the inverse of split, folding a movement's ideas onto the previous one and removing it.
@@ -23,7 +26,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Idea/part tags moved from a separate row hanging below each idea bar into small inline chips within the bar itself, right after the idea text — every idea is now exactly one row tall regardless of whether it's tagged, instead of always reserving a second row (even when untagged, as a ghosted placeholder). An untagged chip collapses to a bare "+" icon rather than a full-width ghost pill, so untagged ideas cost only a small icon's worth of extra width, not a whole placeholder tag.
 - The idea row's drag handle moved to the left of the number, ahead of the idea text.
-- Status bar's sermon-tag group labels spelled out as "Scripture"/"Themes" instead of "s."/"t.".
+- Status bar's sermon-tag group labels spelled out as "Scripture"/"Themes" instead of "s."/"t.", now with small icons, and the tag chips themselves are proper rounded pills (previously barely-rounded rectangles) matching the idea/part tag chip style used elsewhere.
+- General visual polish pass: stronger movement-card shadow, idea-bar hover tint, a left accent bar on selected ideas, dashed "ghost card" styling on the +Add idea/movement buttons, drag handles a bit more visible by default and more so on hover, and a background tint on the empty-movement placeholder.
+- Preaching View: wider gap between heading and body type sizes, a rule above each movement heading, and notes set off with a left border rather than font styling alone.
 
 ### Fixed
 - Clicking "+ Add movement" (button or command palette) left nothing focused after the rebuild, so GTK's default focus-chain silently jumped to the first movement's name entry instead — new movements now focus their own name entry, matching "Duplicate movement".

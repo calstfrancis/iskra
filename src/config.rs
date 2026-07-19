@@ -43,6 +43,8 @@ pub struct Config {
     pub print_include_tags: bool,
     #[serde(default = "default_print_font_pt")]
     pub print_font_pt: f64,
+    #[serde(default)]
+    pub preaching_warm_bg: bool,
 }
 
 fn default_work_dir() -> PathBuf {
@@ -84,6 +86,7 @@ impl Default for Config {
             print_include_notes: true,
             print_include_tags: false,
             print_font_pt: default_print_font_pt(),
+            preaching_warm_bg: false,
         }
     }
 }

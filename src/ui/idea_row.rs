@@ -55,7 +55,7 @@ pub fn build_idea_row(
     let root = GtkBox::new(Orientation::Vertical, 2);
     root.add_css_class("idea-row");
 
-    let bar = GtkBox::new(Orientation::Horizontal, 6);
+    let bar = GtkBox::new(Orientation::Horizontal, 8);
     bar.add_css_class("idea-bar");
 
     let grabber = dnd::drag_grabber("Drag to reorder");

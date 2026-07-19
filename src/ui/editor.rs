@@ -901,7 +901,9 @@ impl Editor {
 
             let add_idea_btn = Button::with_label("+ Add idea");
             add_idea_btn.add_css_class("flat");
+            add_idea_btn.add_css_class("ghost-add-btn");
             add_idea_btn.set_halign(Align::Start);
+            add_idea_btn.set_margin_top(4);
             {
                 let state = state.clone();
                 let apply = apply.clone();
@@ -931,6 +933,7 @@ impl Editor {
 
         let add_movement_btn = Button::with_label("+ Add movement");
         add_movement_btn.add_css_class("flat");
+        add_movement_btn.add_css_class("ghost-add-btn");
         add_movement_btn.set_halign(Align::Start);
         {
             let state = state.clone();

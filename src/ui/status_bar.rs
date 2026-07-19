@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Entry, Label, MenuButton, Orientation, Popover, Separator};
+use gtk4::{Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Popover, Separator};
 
 use crate::commands::{Cmd, SermonTagKind};
 use crate::model::{Idea, Movement, Sermon};
@@ -63,10 +63,7 @@ impl StatusBar {
         root.set_margin_start(10);
         root.set_margin_end(10);
 
-        let s_group = Label::new(Some("Scripture"));
-        s_group.add_css_class("dim-label");
-        s_group.add_css_class("caption");
-        s_group.set_tooltip_text(Some("Scripture tags"));
+        let s_group = tag_group_label("bookmark-new-symbolic", "Scripture", "Scripture tags");
         root.append(&s_group);
 
         let s_tags_box = GtkBox::new(Orientation::Horizontal, 4);
@@ -74,10 +71,7 @@ impl StatusBar {
 
         root.append(&Separator::new(Orientation::Vertical));
 
-        let t_group = Label::new(Some("Themes"));
-        t_group.add_css_class("dim-label");
-        t_group.add_css_class("caption");
-        t_group.set_tooltip_text(Some("Theme tags"));
+        let t_group = tag_group_label("emblem-favorite-symbolic", "Themes", "Theme tags");
         root.append(&t_group);
 
         let t_tags_box = GtkBox::new(Orientation::Horizontal, 4);
@@ -267,13 +261,30 @@ impl StatusBar {
     }
 }
 
+/// A small icon + dim caption label pair, for the "Scripture"/"Themes"
+/// group headers — the words alone read as easy-to-skim-past text at
+/// caption size, an icon gives the eye something to anchor on first.
+fn tag_group_label(icon_name: &str, text: &str, tooltip: &str) -> GtkBox {
+    let group = GtkBox::new(Orientation::Horizontal, 4);
+    group.set_tooltip_text(Some(tooltip));
+    let icon = Image::from_icon_name(icon_name);
+    icon.set_pixel_size(12);
+    icon.add_css_class("dim-label");
+    group.append(&icon);
+    let label = Label::new(Some(text));
+    label.add_css_class("dim-label");
+    label.add_css_class("caption");
+    group.append(&label);
+    group
+}
+
 fn rebuild_tag_group(container: &GtkBox, tags: &[String], kind: SermonTagKind, apply: &ApplyFn) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
 
     for tag in tags {
-        let chip = GtkBox::new(Orientation::Horizontal, 2);
+        let chip = GtkBox::new(Orientation::Horizontal, 4);
         chip.add_css_class("tag-chip");
         chip.add_css_class(match kind {
             SermonTagKind::S => "tag-chip-s",
@@ -283,9 +294,14 @@ fn rebuild_tag_group(container: &GtkBox, tags: &[String], kind: SermonTagKind, a
         let label = Label::new(Some(tag));
         chip.append(&label);
 
-        let remove_btn = Button::from_icon_name("window-close-symbolic");
+        let remove_icon = Image::from_icon_name("window-close-symbolic");
+        remove_icon.set_pixel_size(10);
+        let remove_btn = Button::new();
+        remove_btn.set_child(Some(&remove_icon));
         remove_btn.add_css_class("flat");
+        remove_btn.add_css_class("tag-chip-remove");
         remove_btn.set_valign(gtk4::Align::Center);
+        remove_btn.set_tooltip_text(Some("Remove tag"));
         {
             let old: Vec<String> = tags.to_vec();
             let tag = tag.clone();

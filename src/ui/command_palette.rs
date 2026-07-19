@@ -321,6 +321,11 @@ pub fn default_commands() -> Vec<PaletteItem> {
             subtitle: "Large-print, chrome-free pulpit display (Ctrl+Shift+P)".into(),
         },
         PaletteItem {
+            id: "print_sermon".into(),
+            label: "Print Sermon…".into(),
+            subtitle: "Paginated print layout with notes/tags/font-size options (Ctrl+P)".into(),
+        },
+        PaletteItem {
             id: "history".into(),
             label: "History…".into(),
             subtitle: "Browse and restore past committed versions (Ctrl+Shift+H)".into(),
