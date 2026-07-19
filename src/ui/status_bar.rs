@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Popover, ScrolledWindow, Separator};
+use gtk4::{Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Paned, Popover, ScrolledWindow, Separator};
 
 use crate::commands::{Cmd, SermonTagKind};
 use crate::model::{Idea, Movement, Sermon};
@@ -63,19 +63,37 @@ impl StatusBar {
         root.set_margin_start(10);
         root.set_margin_end(10);
 
+        // A draggable divider between the two tag sections, not a fixed
+        // split — Scripture and Theme tags compete for the same row, and a
+        // sermon can lean heavily one way (many citations, few themes, or
+        // vice versa). Each side wraps its tag box in a plain `ScrolledWindow`
+        // that just fills whatever width the `Paned` gives it (no
+        // `propagate_natural_width` — that combination was the previous
+        // approach and it visibly broke: every chip rendered as a bare "…"
+        // with none of its actual text, because the box's width request
+        // collapsed instead of taking its natural content size).
         let s_group = tag_group_label("bookmark-new-symbolic", "Scripture", "Scripture tags");
-        root.append(&s_group);
-
         let s_tags_box = GtkBox::new(Orientation::Horizontal, 4);
-        root.append(&wrap_tags_box(&s_tags_box));
-
-        root.append(&Separator::new(Orientation::Vertical));
+        let s_side = GtkBox::new(Orientation::Horizontal, 6);
+        s_side.append(&s_group);
+        s_side.append(&scroll_tags_box(&s_tags_box));
 
         let t_group = tag_group_label("emblem-favorite-symbolic", "Themes", "Theme tags");
-        root.append(&t_group);
-
         let t_tags_box = GtkBox::new(Orientation::Horizontal, 4);
-        root.append(&wrap_tags_box(&t_tags_box));
+        let t_side = GtkBox::new(Orientation::Horizontal, 6);
+        t_side.append(&t_group);
+        t_side.append(&scroll_tags_box(&t_tags_box));
+
+        let tags_paned = Paned::new(Orientation::Horizontal);
+        tags_paned.set_start_child(Some(&s_side));
+        tags_paned.set_end_child(Some(&t_side));
+        tags_paned.set_resize_start_child(false);
+        tags_paned.set_resize_end_child(false);
+        tags_paned.set_shrink_start_child(true);
+        tags_paned.set_shrink_end_child(true);
+        tags_paned.set_position(220);
+        tags_paned.set_hexpand(false);
+        root.append(&tags_paned);
 
         let spacer = GtkBox::new(Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
@@ -261,22 +279,25 @@ impl StatusBar {
     }
 }
 
-/// Bounds a tag-chip row's width so it can never force the status bar (and
-/// so the whole window) to keep growing as tags accumulate — nothing
-/// previously capped this at all, and enough tags (scripture citations
-/// especially, since `editor.rs` now adds one automatically per completed
-/// `@citation` without any manual "is this too many" pause) could make the
-/// window's natural width balloon past any sane bound. Scrolls internally
-/// past `MAX_TAGS_ROW_WIDTH` instead.
-const MAX_TAGS_ROW_WIDTH: i32 = 260;
-
-fn wrap_tags_box(tags_box: &GtkBox) -> ScrolledWindow {
+/// Wraps a tag-chip row so a long list of tags scrolls horizontally within
+/// whatever width the enclosing `Paned` side gives it, rather than forcing
+/// the status bar (and the whole window) ever wider — nothing capped this
+/// at all before, and scripture citations (`editor.rs` adds one tag
+/// automatically per completed `@citation`, no manual "is this too many"
+/// pause) made it easy to accumulate enough tags to matter. Deliberately
+/// *not* `set_propagate_natural_width` — that mode asks the `ScrolledWindow`
+/// to size itself to its content's natural width (capped), which for an
+/// hexpanding child inside a horizontal `Box` collapsed the whole row's
+/// width request instead, and every chip rendered as a bare ellipsis with
+/// none of its actual text. A plain `ScrolledWindow` just fills the space
+/// its parent (the `Paned`'s start/end slot) allocates it, which is the
+/// well-tested default mode.
+fn scroll_tags_box(tags_box: &GtkBox) -> ScrolledWindow {
     let scroller = ScrolledWindow::new();
     scroller.set_child(Some(tags_box));
     scroller.set_vscrollbar_policy(gtk4::PolicyType::Never);
     scroller.set_hscrollbar_policy(gtk4::PolicyType::Automatic);
-    scroller.set_propagate_natural_width(true);
-    scroller.set_max_content_width(MAX_TAGS_ROW_WIDTH);
+    scroller.set_hexpand(true);
     scroller.set_valign(gtk4::Align::Center);
     scroller
 }
@@ -311,10 +332,15 @@ fn rebuild_tag_group(container: &GtkBox, tags: &[String], kind: SermonTagKind, a
             SermonTagKind::T => "tag-chip-t",
         });
 
+        // No ellipsize/max-width here — a GTK `Label` with ellipsize enabled
+        // reports its *minimum* size as just the ellipsis glyph, not the
+        // capped-but-natural text width, and inside a non-expanding `Box`
+        // that collapsed the whole chip to a bare "…" with none of the
+        // actual tag text ever showing, regardless of how much room the
+        // surrounding `ScrolledWindow`/`Paned` actually had. Showing the
+        // full tag and letting `scroll_tags_box`'s horizontal scrollbar
+        // handle overflow is the tradeoff that's actually legible.
         let label = Label::new(Some(tag));
-        label.set_max_width_chars(20);
-        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        label.set_tooltip_text(Some(tag));
         chip.append(&label);
 
         let remove_icon = Image::from_icon_name("window-close-symbolic");
