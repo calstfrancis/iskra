@@ -84,20 +84,25 @@ impl StatusBar {
         t_side.append(&t_group);
         t_side.append(&scroll_tags_box(&t_tags_box));
 
+        // `hexpand(true)` on the Paned (not on a separate spacer after it) —
+        // an earlier version had the Paned fixed-width with a `hexpand`
+        // spacer next to it, which is exactly backwards: the spacer ate all
+        // the bottom bar's real width while the tag area stayed pinned to
+        // its narrow initial size, "bound by the sidebar" as reported.
+        // `resize_end_child(true)` means the Scripture side keeps its
+        // dragged width when the window resizes and the Themes side
+        // absorbs the extra space — both remain manually resizable via the
+        // handle regardless.
         let tags_paned = Paned::new(Orientation::Horizontal);
         tags_paned.set_start_child(Some(&s_side));
         tags_paned.set_end_child(Some(&t_side));
         tags_paned.set_resize_start_child(false);
-        tags_paned.set_resize_end_child(false);
+        tags_paned.set_resize_end_child(true);
         tags_paned.set_shrink_start_child(true);
         tags_paned.set_shrink_end_child(true);
-        tags_paned.set_position(220);
-        tags_paned.set_hexpand(false);
+        tags_paned.set_position(320);
+        tags_paned.set_hexpand(true);
         root.append(&tags_paned);
-
-        let spacer = GtkBox::new(Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        root.append(&spacer);
 
         let saved_label = Label::new(Some("Saved"));
         saved_label.add_css_class("dim-label");

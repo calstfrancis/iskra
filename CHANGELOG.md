@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.1-dev7] — Movement tools, multi-select, and workflow shortcuts
+## [0.2.1-dev8] — Movement tools, multi-select, and workflow shortcuts
 
 ### Added
 - Scripture citations: type `@` in an idea to start a Bible reference (e.g. `@john3:16`), with live autocomplete on the book name. A completed citation automatically adds its formatted reference ("John 3:16") as a scripture tag on the sermon — the same tag shown in the status bar and addable by hand or via the lectionary sidebar. Preaching View and Print render the citation inline as "John 3:16" rather than the typed shorthand, and both now end with a Bibliography section listing every scripture tag on the sermon (citation-derived or manual), sorted in canonical Bible book order.
@@ -35,6 +35,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A draggable divider between the Scripture and Theme sections of the status bar, so either side can be given more room by hand.
 
 ### Fixed
+- The status bar's scripture/theme tag divider was pinned to a narrow fixed width right after the sidebar, with a separate spacer widget (meant to push "Saved"/version to the right) wrongly claiming all the bottom bar's real expansion space instead — backwards from what was intended. The tag divider now expands to fill the full bottom bar width, with "Saved"/recently-deleted/version still right-aligned past it.
 - The status bar's scripture/theme tag row had no width cap at all — enough tags (easy to hit now that scripture citations auto-add one per completed `@citation` with no manual pause to reconsider) could grow the row, and with it the whole window, to an absurd width, in one observed case spanning past the edge of the screen and crashing the app outright. Each side now scrolls horizontally within whatever width its half of the new divider gives it, instead of forcing the window wider. (An earlier attempt at this same fix also ellipsized long tags to fit — that backfired badly: a GTK `Label` with ellipsis enabled reports its *minimum* size as just the ellipsis glyph, so every tag rendered as a bare "…" with none of its actual text visible, regardless of available space. Tags are now shown in full, with the scrollbar handling overflow instead of truncation.)
 - Preaching View's close/print/warm-background buttons rendered as completely invisible (though still clickable) — `Button::from_icon_name` and the `osd` style class apparently don't render in this window (a plain `gtk4::Window`, unlike every other window in the app, which are all libadwaita windows). Switched to plain text/glyph labels with an explicit background supplied by our own CSS instead of relying on icon-theme lookup or `osd`.
 - Clicking "+ Add movement" (button or command palette) left nothing focused after the rebuild, so GTK's default focus-chain silently jumped to the first movement's name entry instead — new movements now focus their own name entry, matching "Duplicate movement".
