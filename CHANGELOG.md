@@ -5,9 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.1-dev4] — Movement tools, multi-select, and workflow shortcuts
+## [0.2.1-dev5] — Movement tools, multi-select, and workflow shortcuts
 
 ### Added
+- Scripture citations: type `@` in an idea to start a Bible reference (e.g. `@john3:16`), with live autocomplete on the book name. A completed citation automatically adds its formatted reference ("John 3:16") as a scripture tag on the sermon — the same tag shown in the status bar and addable by hand or via the lectionary sidebar. Preaching View and Print render the citation inline as "John 3:16" rather than the typed shorthand, and both now end with a Bibliography section listing every scripture tag on the sermon (citation-derived or manual), sorted in canonical Bible book order.
 - "Print Sermon…" is now reachable from the hamburger menu, the command palette (Ctrl+K), and Ctrl+P from the main editor window — previously only a small icon button and Ctrl+P inside Preaching View itself.
 - Preaching View: a thin liturgical-color strip when a date is planned, a scroll-synced row of movement progress dots, idea numbering, and a warm/cream background toggle (remembered per machine).
 - Collapsed movements show an idea-count badge ("3 ideas") in the header, since collapsing hides the ideas box entirely and previously gave no hint of what was inside.
@@ -31,6 +32,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preaching View: wider gap between heading and body type sizes, a rule above each movement heading, and notes set off with a left border rather than font styling alone.
 
 ### Fixed
+- Preaching View's close/print/warm-background buttons rendered as completely invisible (though still clickable) — `Button::from_icon_name` and the `osd` style class apparently don't render in this window (a plain `gtk4::Window`, unlike every other window in the app, which are all libadwaita windows). Switched to plain text/glyph labels with an explicit background supplied by our own CSS instead of relying on icon-theme lookup or `osd`.
 - Clicking "+ Add movement" (button or command palette) left nothing focused after the rebuild, so GTK's default focus-chain silently jumped to the first movement's name entry instead — new movements now focus their own name entry, matching "Duplicate movement".
 
 ## [0.2.0] "First Light" — Workflow improvements: templates, preaching view, history

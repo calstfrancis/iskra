@@ -18,7 +18,8 @@ use gtk4::prelude::*;
 use gtk4::{Align, Box as GtkBox, Button, DropTarget, Label, Orientation, ScrolledWindow};
 use libadwaita as adw;
 
-use crate::commands::{Cmd, TagKind};
+use crate::bible;
+use crate::commands::{Cmd, SermonTagKind, TagKind};
 use crate::model::{Idea, Movement, Sermon};
 use crate::state::AppState;
 use crate::ui::dnd::{self, DropZone};
@@ -674,18 +675,51 @@ impl Editor {
                         let id = id.clone();
                         let state = state.clone();
                         let apply = apply.clone();
-                        move |text| {
+                        move |text: String| {
                             let old = state
                                 .borrow()
                                 .sermon
                                 .idea(&id)
                                 .map(|i| i.text.clone())
                                 .unwrap_or_default();
-                            apply(Cmd::EditIdeaText {
+                            let edit = Cmd::EditIdeaText {
                                 id: id.clone(),
                                 old,
-                                new: text,
-                            });
+                                new: text.clone(),
+                            };
+                            // "@john3:16" auto-tags the sermon with "John
+                            // 3:16" as soon as the citation is complete.
+                            // Only wrapped in a Composite on the (rare)
+                            // keystroke that actually completes a new
+                            // citation — `Cmd::Composite` has no coalesce
+                            // key (see `commands.rs::Cmd::coalesce_key`),
+                            // so wrapping *every* keystroke would silently
+                            // break the usual same-field text-edit
+                            // coalescing, turning ordinary typing into one
+                            // undo step per character. Never removes a tag
+                            // on its own: if you delete the citation, the
+                            // tag just stays, removable by hand from the
+                            // status bar like any other.
+                            let existing_s_tags = state.borrow().sermon.s_tags.clone();
+                            let mut new_s_tags = existing_s_tags.clone();
+                            for found in bible::find_citations(&text) {
+                                let display = found.citation.display();
+                                if !new_s_tags.contains(&display) {
+                                    new_s_tags.push(display);
+                                }
+                            }
+                            if new_s_tags == existing_s_tags {
+                                apply(edit);
+                            } else {
+                                apply(Cmd::Composite(vec![
+                                    edit,
+                                    Cmd::SetSermonTags {
+                                        kind: SermonTagKind::S,
+                                        old: existing_s_tags,
+                                        new: new_s_tags,
+                                    },
+                                ]));
+                            }
                         }
                     },
                     {

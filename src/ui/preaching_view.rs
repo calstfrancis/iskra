@@ -88,7 +88,7 @@ impl PreachingView {
                     number_lbl.add_css_class("preaching-idea-number");
                     number_lbl.set_valign(Align::Start);
                     idea_row.append(&number_lbl);
-                    let idea_lbl = Label::new(Some(&idea.text));
+                    let idea_lbl = Label::new(Some(&crate::bible::render_display(&idea.text)));
                     idea_lbl.add_css_class("preaching-idea");
                     idea_lbl.set_xalign(0.0);
                     idea_lbl.set_wrap(true);
@@ -107,15 +107,40 @@ impl PreachingView {
             }
         }
 
+        if !sermon.s_tags.is_empty() {
+            let heading = Label::new(Some("Bibliography"));
+            heading.add_css_class("preaching-movement");
+            heading.set_xalign(0.0);
+            heading.set_margin_top(28);
+            content.append(&heading);
+
+            let mut tags = sermon.s_tags.clone();
+            tags.sort_by_key(|t| crate::bible::sort_key(t));
+            for tag in &tags {
+                let entry_lbl = Label::new(Some(tag));
+                entry_lbl.add_css_class("preaching-bibliography-entry");
+                entry_lbl.set_xalign(0.0);
+                entry_lbl.set_margin_top(6);
+                content.append(&entry_lbl);
+            }
+        }
+
         let scroll = ScrolledWindow::new();
         scroll.set_child(Some(&content));
         scroll.set_vexpand(true);
         scroll.set_hscrollbar_policy(gtk4::PolicyType::Never);
 
-        let close_btn = Button::from_icon_name("window-close-symbolic");
-        close_btn.add_css_class("flat");
-        close_btn.add_css_class("circular");
-        close_btn.add_css_class("osd");
+        // Plain text/glyph labels, not `from_icon_name` — three unrelated
+        // symbolic icon names (close/print/warm) all rendered as literally
+        // nothing in this window (confirmed still clickable, just fully
+        // invisible, including the `osd` class's own background), pointing
+        // at icon-theme resolution failing for this specific undecorated
+        // fullscreen window rather than any one icon being misnamed. A text
+        // glyph renders through the font, sidestepping icon lookup — and
+        // `.preaching-overlay-btn` supplies its own background explicitly
+        // rather than relying on `osd`, so visibility doesn't depend on
+        // that class rendering correctly here either.
+        let close_btn = Button::with_label("✕");
         close_btn.add_css_class("preaching-overlay-btn");
         close_btn.set_valign(Align::Start);
         close_btn.set_halign(Align::End);
@@ -123,27 +148,20 @@ impl PreachingView {
         close_btn.set_margin_end(16);
         close_btn.set_tooltip_text(Some("Close (Esc)"));
 
-        let print_btn = Button::from_icon_name("document-print-symbolic");
-        print_btn.add_css_class("flat");
-        print_btn.add_css_class("circular");
-        print_btn.add_css_class("osd");
+        let print_btn = Button::with_label("Print");
         print_btn.add_css_class("preaching-overlay-btn");
         print_btn.set_valign(Align::Start);
         print_btn.set_halign(Align::End);
         print_btn.set_margin_top(16);
-        print_btn.set_margin_end(64);
+        print_btn.set_margin_end(72);
         print_btn.set_tooltip_text(Some("Print (Ctrl+P)"));
 
-        let warm_btn = ToggleButton::new();
-        warm_btn.set_icon_name("weather-clear-symbolic");
-        warm_btn.add_css_class("flat");
-        warm_btn.add_css_class("circular");
-        warm_btn.add_css_class("osd");
+        let warm_btn = ToggleButton::with_label("Warm");
         warm_btn.add_css_class("preaching-overlay-btn");
         warm_btn.set_valign(Align::Start);
         warm_btn.set_halign(Align::End);
         warm_btn.set_margin_top(16);
-        warm_btn.set_margin_end(112);
+        warm_btn.set_margin_end(170);
         warm_btn.set_tooltip_text(Some("Warm background"));
         warm_btn.set_active(state.borrow().config.preaching_warm_bg);
 

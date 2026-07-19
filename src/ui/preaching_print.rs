@@ -41,6 +41,8 @@ enum Block {
     IdeaTags(String),
     IdeaText(String),
     IdeaNotes(String),
+    Bibliography,
+    BibliographyEntry(String),
 }
 
 struct Measured {
@@ -168,11 +170,20 @@ fn paginate(sermon: &Sermon, context: &gtk4::PrintContext, options: &PrintOption
                 blocks.push(Block::IdeaTags(tag_line));
             }
             if !idea.text.is_empty() {
-                blocks.push(Block::IdeaText(idea.text.clone()));
+                blocks.push(Block::IdeaText(crate::bible::render_display(&idea.text)));
             }
             if options.include_notes && !idea.notes.is_empty() {
                 blocks.push(Block::IdeaNotes(idea.notes.clone()));
             }
+        }
+    }
+
+    if !sermon.s_tags.is_empty() {
+        blocks.push(Block::Bibliography);
+        let mut tags = sermon.s_tags.clone();
+        tags.sort_by_key(|t| crate::bible::sort_key(t));
+        for tag in tags {
+            blocks.push(Block::BibliographyEntry(tag));
         }
     }
 
@@ -190,7 +201,7 @@ fn paginate(sermon: &Sermon, context: &gtk4::PrintContext, options: &PrintOption
             pages.push(std::mem::take(&mut current));
             y = 0.0;
         }
-        if matches!(m.block, Block::Movement(_))
+        if matches!(m.block, Block::Movement(_) | Block::Bibliography)
             && !current.is_empty()
             && available_height - (y + needed) < MIN_ORPHAN_SPACE_PT
         {
@@ -224,6 +235,8 @@ fn block_style(block: &Block, font_pt: f64) -> (&str, f64, bool, bool, f64) {
         Block::IdeaTags(t) => (t.as_str(), font_pt * 0.75, false, true, 12.0),
         Block::IdeaText(t) => (t.as_str(), font_pt, false, false, 10.0),
         Block::IdeaNotes(t) => (t.as_str(), font_pt * 0.85, false, true, 3.0),
+        Block::Bibliography => ("Bibliography", font_pt * 1.3, true, false, 26.0),
+        Block::BibliographyEntry(t) => (t.as_str(), font_pt * 0.95, false, false, 6.0),
     }
 }
 

@@ -290,8 +290,23 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         min-width: 10px; \
         min-height: 10px; \
     } \
+    .preaching-bibliography-entry { \
+        font-size: 1.1em; \
+        opacity: 0.85; \
+    } \
     .preaching-overlay-btn { \
-        opacity: 0.35; \
+        background: alpha(black, 0.55); \
+        color: white; \
+        border: none; \
+        border-radius: 999px; \
+        padding: 8px 16px; \
+        font-size: 0.95em; \
+        font-weight: 600; \
+        opacity: 0.55; \
+        box-shadow: 0 1px 4px alpha(black, 0.3); \
+    } \
+    .preaching-overlay-btn:checked { \
+        background: alpha(@accent_color, 0.85); \
     } \
     .preaching-overlay-btn:hover { \
         opacity: 1.0; \

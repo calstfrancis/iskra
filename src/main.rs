@@ -1,3 +1,4 @@
+mod bible;
 mod commands;
 mod config;
 mod error;

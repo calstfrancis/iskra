@@ -91,9 +91,11 @@ pub fn build_idea_row(
     entry.set_has_frame(false);
     entry.add_css_class("idea-entry");
     entry.set_hexpand(true);
-    entry.set_placeholder_text(Some("Idea…"));
+    entry.set_placeholder_text(Some("Idea… (type @ for a scripture citation)"));
     entry.set_text(&idea.text);
     bar.append(&entry);
+
+    wire_citation_autocomplete(&entry);
 
     let idea_tag_popover = TagPopover::new("Idea tag…");
     idea_tag_popover.set_text(&idea.idea_tag);
@@ -300,6 +302,103 @@ fn wire_tag_filter_toggle(btn: &MenuButton, entry: &gtk4::Entry, on_toggle_tag_f
 /// auto-append a dropdown-arrow indicator, which reads as visual clutter at
 /// this chip's small size (a whole row of "tag ⌄" pills); a custom child
 /// opts out of that indicator entirely.
+/// Live book-name autocomplete for the `@book chapter:verse` citation
+/// syntax (see `bible.rs`) — typing `@` then a partial book name pops a
+/// filtered list; picking one completes `@BookName ` in place so the user
+/// continues straight into typing chapter:verse. Independent of the
+/// idea-text-changed wiring in `editor.rs`: this only manipulates the
+/// entry's own text/cursor locally and never touches the model, so it
+/// needs no callback out of this module.
+fn wire_citation_autocomplete(entry: &gtk4::Entry) {
+    let popover = gtk4::Popover::new();
+    popover.set_parent(entry);
+    popover.set_has_arrow(false);
+    popover.set_autohide(false);
+    let list = gtk4::ListBox::new();
+    list.add_css_class("boxed-list");
+    popover.set_child(Some(&list));
+
+    {
+        let entry = entry.clone();
+        let popover = popover.clone();
+        let list = list.clone();
+        entry.connect_changed(move |e| {
+            let text = e.text().to_string();
+            let cursor_byte = char_pos_to_byte(&text, e.position());
+            let Some((_start, _end, query)) = crate::bible::citation_query_at_cursor(&text, cursor_byte) else {
+                popover.popdown();
+                return;
+            };
+            let matches = crate::bible::search_books(&query);
+            if matches.is_empty() {
+                popover.popdown();
+                return;
+            }
+            while let Some(child) = list.first_child() {
+                list.remove(&child);
+            }
+            for book in &matches {
+                let row = gtk4::ListBoxRow::new();
+                let label = Label::new(Some(book));
+                label.set_xalign(0.0);
+                label.set_margin_top(4);
+                label.set_margin_bottom(4);
+                label.set_margin_start(8);
+                label.set_margin_end(8);
+                row.set_child(Some(&label));
+                list.append(&row);
+            }
+            popover.popup();
+        });
+    }
+    {
+        let entry = entry.clone();
+        let popover = popover.clone();
+        list.connect_row_activated(move |_, row| {
+            let Some(label) = row.child().and_downcast::<Label>() else {
+                return;
+            };
+            let book = label.text().to_string();
+            let text = entry.text().to_string();
+            let cursor_byte = char_pos_to_byte(&text, entry.position());
+            if let Some((start, end, _query)) = crate::bible::citation_query_at_cursor(&text, cursor_byte) {
+                let mut new_text = text.clone();
+                new_text.replace_range(start..end, &format!("@{book} "));
+                entry.set_text(&new_text);
+                let new_cursor_byte = start + 1 + book.len() + 1;
+                entry.set_position(byte_pos_to_char(&new_text, new_cursor_byte));
+            }
+            popover.popdown();
+        });
+    }
+    {
+        let key_ctl = gtk4::EventControllerKey::new();
+        let popover = popover.clone();
+        key_ctl.connect_key_pressed(move |_, key, _, _| {
+            if key == gtk4::gdk::Key::Escape && popover.is_visible() {
+                popover.popdown();
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        entry.add_controller(key_ctl);
+    }
+}
+
+fn char_pos_to_byte(text: &str, char_pos: i32) -> usize {
+    if char_pos < 0 {
+        return text.len();
+    }
+    text.char_indices()
+        .nth(char_pos as usize)
+        .map(|(b, _)| b)
+        .unwrap_or(text.len())
+}
+
+fn byte_pos_to_char(text: &str, byte_pos: usize) -> i32 {
+    text[..byte_pos.min(text.len())].chars().count() as i32
+}
+
 fn refresh_tag_button(btn: &MenuButton, text: &str, tooltip_when_empty: &str) {
     if text.is_empty() {
         let icon = Image::from_icon_name("list-add-symbolic");
