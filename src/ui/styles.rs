@@ -111,38 +111,36 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         border-radius: 12px; \
         padding: 10px 12px; \
     } \
-    .tag-tab { \
-        font-size: 0.75em; \
+    .idea-tag-chip { \
+        font-size: 0.72em; \
         font-weight: 600; \
         padding: 2px 9px; \
-        border-radius: 0 0 8px 8px; \
+        border-radius: 999px; \
         min-height: 0; \
-        box-shadow: 0 1px 2px alpha(black, 0.06); \
+        min-width: 0; \
     } \
-    .tag-tab-idea { \
+    .idea-tag-chip-idea { \
         background-color: @accent_bg_color; \
         color: @accent_fg_color; \
     } \
-    .tag-tab-idea:hover { \
-        box-shadow: 0 1px 2px alpha(black, 0.06), inset 0 0 0 1px alpha(@accent_fg_color, 0.35); \
+    .idea-tag-chip-idea:hover { \
+        box-shadow: inset 0 0 0 1px alpha(@accent_fg_color, 0.35); \
     } \
-    .tag-tab-part { \
+    .idea-tag-chip-part { \
         background: alpha(@success_color, 0.24); \
         color: @success_color; \
     } \
-    .tag-tab-part:hover { \
+    .idea-tag-chip-part:hover { \
         background: alpha(@success_color, 0.34); \
     } \
-    .tag-tab-idea.tag-tab-empty, \
-    .tag-tab-part.tag-tab-empty { \
-        background: alpha(@window_fg_color, 0.08); \
-        color: alpha(@window_fg_color, 0.5); \
-        font-weight: 500; \
-        box-shadow: none; \
+    .idea-tag-chip-empty { \
+        background: transparent; \
+        color: alpha(@window_fg_color, 0.35); \
+        padding: 2px 5px; \
     } \
-    .tag-tab-idea.tag-tab-empty:hover, \
-    .tag-tab-part.tag-tab-empty:hover { \
-        background: alpha(@window_fg_color, 0.14); \
+    .idea-tag-chip-empty:hover { \
+        background: alpha(@window_fg_color, 0.1); \
+        color: alpha(@window_fg_color, 0.75); \
     } \
     .drop-indicator { \
         min-height: 3px; \

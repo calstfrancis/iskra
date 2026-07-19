@@ -1,6 +1,9 @@
-//! A single idea bar: number · click-to-edit text · expansion triangle
-//! (→ notes) · grabber, with idea/part tag tabs hanging below. The grabber
-//! only gets its `DragSource` wired by the caller (`editor.rs`, via
+//! A single idea bar: number · click-to-edit text · idea/part tag chips ·
+//! expansion triangle (→ notes) · grabber — every idea is exactly one row
+//! tall regardless of whether it's tagged. An untagged chip collapses to a
+//! bare "+" icon rather than a ghosted placeholder pill, so untagged ideas
+//! don't cost any more width than tagged ones beyond the icon itself. The
+//! grabber only gets its `DragSource` wired by the caller (`editor.rs`, via
 //! `ui::dnd::setup_drag_source`) — building it here would need the idea's
 //! id and the shared `drag_active` flag, both of which `editor.rs` already
 //! has in scope, so there's nothing this module would add by taking them
@@ -66,6 +69,28 @@ pub fn build_idea_row(
     entry.set_text(&idea.text);
     bar.append(&entry);
 
+    let idea_tag_popover = TagPopover::new("Idea tag…");
+    idea_tag_popover.set_text(&idea.idea_tag);
+    idea_tag_popover.set_census(idea_tag_census.to_vec());
+    let idea_tag_btn = MenuButton::new();
+    idea_tag_btn.add_css_class("idea-tag-chip");
+    idea_tag_btn.add_css_class("idea-tag-chip-idea");
+    idea_tag_btn.add_css_class("flat");
+    refresh_tag_button(&idea_tag_btn, &idea.idea_tag, "Add idea tag");
+    idea_tag_btn.set_popover(Some(idea_tag_popover.popover()));
+    bar.append(&idea_tag_btn);
+
+    let part_tag_popover = TagPopover::new("Part tag…");
+    part_tag_popover.set_text(&idea.part_tag);
+    part_tag_popover.set_census(part_tag_census.to_vec());
+    let part_tag_btn = MenuButton::new();
+    part_tag_btn.add_css_class("idea-tag-chip");
+    part_tag_btn.add_css_class("idea-tag-chip-part");
+    part_tag_btn.add_css_class("flat");
+    refresh_tag_button(&part_tag_btn, &idea.part_tag, "Add part tag");
+    part_tag_btn.set_popover(Some(part_tag_popover.popover()));
+    bar.append(&part_tag_btn);
+
     let expander = ToggleButton::new();
     expander.set_icon_name(if idea.expanded {
         "pan-down-symbolic"
@@ -126,46 +151,6 @@ pub fn build_idea_row(
         });
     }
 
-    // Tag tabs — two coloured tabs hanging below the bar's right edge (idea
-    // tag / part tag), distinguished by colour rather than just label.
-    let tags_row = GtkBox::new(Orientation::Horizontal, 3);
-    tags_row.set_margin_end(10);
-    tags_row.set_halign(Align::End);
-
-    let idea_tag_popover = TagPopover::new("Idea tag…");
-    idea_tag_popover.set_text(&idea.idea_tag);
-    idea_tag_popover.set_census(idea_tag_census.to_vec());
-    let idea_tag_btn = MenuButton::new();
-    idea_tag_btn.add_css_class("tag-tab");
-    idea_tag_btn.add_css_class("tag-tab-idea");
-    idea_tag_btn.add_css_class("flat");
-    idea_tag_btn.set_label(if idea.idea_tag.is_empty() {
-        "idea"
-    } else {
-        &idea.idea_tag
-    });
-    set_empty_class(&idea_tag_btn, idea.idea_tag.is_empty());
-    idea_tag_btn.set_popover(Some(idea_tag_popover.popover()));
-    tags_row.append(&idea_tag_btn);
-
-    let part_tag_popover = TagPopover::new("Part tag…");
-    part_tag_popover.set_text(&idea.part_tag);
-    part_tag_popover.set_census(part_tag_census.to_vec());
-    let part_tag_btn = MenuButton::new();
-    part_tag_btn.add_css_class("tag-tab");
-    part_tag_btn.add_css_class("tag-tab-part");
-    part_tag_btn.add_css_class("flat");
-    part_tag_btn.set_label(if idea.part_tag.is_empty() {
-        "part"
-    } else {
-        &idea.part_tag
-    });
-    set_empty_class(&part_tag_btn, idea.part_tag.is_empty());
-    part_tag_btn.set_popover(Some(part_tag_popover.popover()));
-    tags_row.append(&part_tag_btn);
-
-    root.append(&tags_row);
-
     // Wiring
     entry.connect_changed(move |e| on_text_changed(e.text().to_string()));
     entry.connect_activate(move |_| on_enter());
@@ -205,16 +190,14 @@ pub fn build_idea_row(
         let btn = idea_tag_btn.clone();
         let entry = idea_tag_popover.entry().clone();
         entry.connect_activate(move |e| {
-            let text = e.text();
-            btn.set_label(if text.is_empty() { "idea" } else { &text });
+            refresh_tag_button(&btn, &e.text(), "Add idea tag");
             popover.popdown();
         });
         let btn2 = idea_tag_btn.clone();
         idea_tag_popover.entry().connect_changed(move |e| {
             let text = e.text();
             on_idea_tag_changed(text.to_string());
-            btn2.set_label(if text.is_empty() { "idea" } else { &text });
-            set_empty_class(&btn2, text.is_empty());
+            refresh_tag_button(&btn2, &text, "Add idea tag");
         });
     }
     {
@@ -222,16 +205,14 @@ pub fn build_idea_row(
         let btn = part_tag_btn.clone();
         let entry = part_tag_popover.entry().clone();
         entry.connect_activate(move |e| {
-            let text = e.text();
-            btn.set_label(if text.is_empty() { "part" } else { &text });
+            refresh_tag_button(&btn, &e.text(), "Add part tag");
             popover.popdown();
         });
         let btn2 = part_tag_btn.clone();
         part_tag_popover.entry().connect_changed(move |e| {
             let text = e.text();
             on_part_tag_changed(text.to_string());
-            btn2.set_label(if text.is_empty() { "part" } else { &text });
-            set_empty_class(&btn2, text.is_empty());
+            refresh_tag_button(&btn2, &text, "Add part tag");
         });
     }
     delete_btn.connect_clicked(move |_| on_delete());
@@ -248,13 +229,25 @@ pub fn build_idea_row(
     }
 }
 
-/// Ghosts a tag tab when its value is unset, so an idea with no tags reads
-/// as visibly different from one that's actually tagged "idea"/"part" —
-/// otherwise the placeholder label and a genuine tag value look identical.
-fn set_empty_class(btn: &MenuButton, is_empty: bool) {
-    if is_empty {
-        btn.add_css_class("tag-tab-empty");
+/// Renders a tag chip as its colored text pill when set, or collapses it to
+/// a bare "+" icon when empty — an untagged idea costs no more width than
+/// the icon itself, instead of a ghosted placeholder pill the size of a real
+/// tag. Uses `set_child` with a plain `Label`/`Image` rather than
+/// `MenuButton`'s `set_label`/`set_icon_name` convenience methods — those
+/// auto-append a dropdown-arrow indicator, which reads as visual clutter at
+/// this chip's small size (a whole row of "tag ⌄" pills); a custom child
+/// opts out of that indicator entirely.
+fn refresh_tag_button(btn: &MenuButton, text: &str, tooltip_when_empty: &str) {
+    if text.is_empty() {
+        let icon = Image::from_icon_name("list-add-symbolic");
+        icon.set_pixel_size(11);
+        btn.set_child(Some(&icon));
+        btn.set_tooltip_text(Some(tooltip_when_empty));
+        btn.add_css_class("idea-tag-chip-empty");
     } else {
-        btn.remove_css_class("tag-tab-empty");
+        let label = Label::new(Some(text));
+        btn.set_child(Some(&label));
+        btn.set_tooltip_text(Some(text));
+        btn.remove_css_class("idea-tag-chip-empty");
     }
 }
