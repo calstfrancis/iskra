@@ -1,6 +1,6 @@
 [package]
 name = "iskra"
-version = "0.2.1-dev8"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "Sermon planning for preachers who work from structured notes"

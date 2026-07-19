@@ -5,40 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.1-dev8] — Movement tools, multi-select, and workflow shortcuts
+## [0.3.0] "Kindled Verse" — Scripture citations, printable Preaching View, and movement tools
 
 ### Added
 - Scripture citations: type `@` in an idea to start a Bible reference (e.g. `@john3:16`), with live autocomplete on the book name. A completed citation automatically adds its formatted reference ("John 3:16") as a scripture tag on the sermon — the same tag shown in the status bar and addable by hand or via the lectionary sidebar. Preaching View and Print render the citation inline as "John 3:16" rather than the typed shorthand, and both now end with a Bibliography section listing every scripture tag on the sermon (citation-derived or manual), sorted in canonical Bible book order.
-- "Print Sermon…" is now reachable from the hamburger menu, the command palette (Ctrl+K), and Ctrl+P from the main editor window — previously only a small icon button and Ctrl+P inside Preaching View itself.
+- Preaching View can now actually be printed — from the hamburger menu, the command palette (Ctrl+K), or Ctrl+P (both inside Preaching View and from the main editor): a dedicated paginated layout with page-aware breaks that avoid stranding a movement heading alone at the bottom of a page, a running header (sermon title) and footer (page X of Y) on every sheet, and an "Iskra" tab in the print dialog for including/excluding notes, including/excluding idea/part tags, and setting the print font size. These settings are remembered per machine for next time.
 - Preaching View: a thin liturgical-color strip when a date is planned, a scroll-synced row of movement progress dots, idea numbering, and a warm/cream background toggle (remembered per machine).
-- Collapsed movements show an idea-count badge ("3 ideas") in the header, since collapsing hides the ideas box entirely and previously gave no hint of what was inside.
-- Right-click blank space in a movement to split it: everything from that point down moves into a new movement inserted right below.
+- Right-click blank space in a movement to split it: everything from that point down moves into a new movement inserted right below. "Merge with movement above" does the inverse.
 - Multi-select ideas within a movement via rubber-band drag, or Ctrl/Shift-click on an idea's number. Selected ideas can be dragged together, and bulk-deleted with Delete/BackSpace or a right-click "Delete N ideas" menu item.
-- "Merge with movement above" button on every movement (disabled on the first one) — the inverse of split, folding a movement's ideas onto the previous one and removing it.
-- Idea/part tag quick-filter: Ctrl+click a tag chip to dim every idea that doesn't carry that tag.
-- "Rename everywhere" in the idea/part tag popover — retypes that tag's value on every idea in the sermon that currently shares it, not just the one being edited.
-- Collapse All / Expand All Movements commands in the command palette (Ctrl+K).
+- Idea/part tag quick-filter: Ctrl+click a tag chip to dim every idea that doesn't carry that tag. "Rename everywhere" in the tag popover retypes a tag's value on every idea in the sermon that shares it.
+- Collapse All / Expand All Movements commands in the command palette. Collapsed movements show an idea-count badge ("3 ideas") since collapsing hides the ideas box entirely.
 - Alt+Shift+Up/Down jumps the focused idea or movement straight to the top/bottom of its list, alongside the existing single-step Alt+Up/Down.
 - "Recently deleted" tray in the status bar — a session-scoped safety net listing the last 20 deleted ideas/movements with one-click restore, alongside undo.
 - "Copy movement to another sermon…" button on every movement header, opening a sermon picker and appending a duplicate of the movement (fresh ids) to the chosen sermon's file.
 - Right-click a lectionary reading in the sidebar to add it as a scripture tag on the sermon.
-- Preaching View can now actually be printed (Ctrl+P, or the new print button next to close): a dedicated paginated layout — not the on-screen fullscreen view reused — with page-aware breaks that avoid stranding a movement heading alone at the bottom of a page, a running header (sermon title) and footer (page X of Y) on every sheet, and an "Iskra" tab in the print dialog for including/excluding notes, including/excluding idea/part tags, and setting the print font size. These settings are remembered per machine for next time.
+- A draggable divider between the Scripture and Theme sections of the status bar.
 
 ### Changed
-- Idea/part tags moved from a separate row hanging below each idea bar into small inline chips within the bar itself, right after the idea text — every idea is now exactly one row tall regardless of whether it's tagged, instead of always reserving a second row (even when untagged, as a ghosted placeholder). An untagged chip collapses to a bare "+" icon rather than a full-width ghost pill, so untagged ideas cost only a small icon's worth of extra width, not a whole placeholder tag.
+- Idea/part tags moved from a separate row hanging below each idea bar into small inline chips within the bar itself, right after the idea text — every idea is now exactly one row tall regardless of whether it's tagged. An untagged chip collapses to a bare "+" icon rather than a full-width ghost pill.
 - The idea row's drag handle moved to the left of the number, ahead of the idea text.
-- Status bar's sermon-tag group labels spelled out as "Scripture"/"Themes" instead of "s."/"t.", now with small icons, and the tag chips themselves are proper rounded pills (previously barely-rounded rectangles) matching the idea/part tag chip style used elsewhere.
-- General visual polish pass: stronger movement-card shadow, idea-bar hover tint, a left accent bar on selected ideas, dashed "ghost card" styling on the +Add idea/movement buttons, drag handles a bit more visible by default and more so on hover, and a background tint on the empty-movement placeholder.
+- Status bar's sermon-tag group labels spelled out as "Scripture"/"Themes" instead of "s."/"t.", now with small icons, and the tag chips themselves are proper rounded pills matching the idea/part tag chip style used elsewhere.
+- General visual polish pass: stronger movement-card shadow, idea-bar hover tint, a left accent bar on selected ideas, dashed "ghost card" styling on the +Add idea/movement buttons, more visible drag handles, and a background tint on the empty-movement placeholder.
 - Preaching View: wider gap between heading and body type sizes, a rule above each movement heading, and notes set off with a left border rather than font styling alone.
 
-### Added
-- A draggable divider between the Scripture and Theme sections of the status bar, so either side can be given more room by hand.
-
 ### Fixed
-- The status bar's scripture/theme tag divider was pinned to a narrow fixed width right after the sidebar, with a separate spacer widget (meant to push "Saved"/version to the right) wrongly claiming all the bottom bar's real expansion space instead — backwards from what was intended. The tag divider now expands to fill the full bottom bar width, with "Saved"/recently-deleted/version still right-aligned past it.
-- The status bar's scripture/theme tag row had no width cap at all — enough tags (easy to hit now that scripture citations auto-add one per completed `@citation` with no manual pause to reconsider) could grow the row, and with it the whole window, to an absurd width, in one observed case spanning past the edge of the screen and crashing the app outright. Each side now scrolls horizontally within whatever width its half of the new divider gives it, instead of forcing the window wider. (An earlier attempt at this same fix also ellipsized long tags to fit — that backfired badly: a GTK `Label` with ellipsis enabled reports its *minimum* size as just the ellipsis glyph, so every tag rendered as a bare "…" with none of its actual text visible, regardless of available space. Tags are now shown in full, with the scrollbar handling overflow instead of truncation.)
-- Preaching View's close/print/warm-background buttons rendered as completely invisible (though still clickable) — `Button::from_icon_name` and the `osd` style class apparently don't render in this window (a plain `gtk4::Window`, unlike every other window in the app, which are all libadwaita windows). Switched to plain text/glyph labels with an explicit background supplied by our own CSS instead of relying on icon-theme lookup or `osd`.
 - Clicking "+ Add movement" (button or command palette) left nothing focused after the rebuild, so GTK's default focus-chain silently jumped to the first movement's name entry instead — new movements now focus their own name entry, matching "Duplicate movement".
+- Preaching View's close/print/warm-background buttons now render correctly (they previously came out invisible in that window, though still clickable).
+- The status bar's Scripture/Theme tag area now spans the full width of the bottom bar and scrolls horizontally per side instead of growing the window without bound.
 
 ## [0.2.0] "First Light" — Workflow improvements: templates, preaching view, history
 

@@ -36,6 +36,17 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.0" date="2026-07-19">
+      <description>
+        <p>
+          Kindled Verse — scripture citations with live autocomplete (type
+          <code>@john3:16</code> to tag and cite a reference, with a
+          Bibliography section in Preaching View and Print), a printable
+          Preaching View, movement split/merge, multi-select ideas, and a
+          batch of workflow shortcuts and visual polish.
+        </p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-07-18">
       <description>
         <p>

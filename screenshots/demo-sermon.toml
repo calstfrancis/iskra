@@ -1,0 +1,87 @@
+schema_version = 1
+id = "00000000-0000-4000-8000-000000000001"
+title = "The Sower and the Soils"
+series = "Parables of Jesus"
+created = "2026-01-01T12:00:00Z"
+modified = "2026-01-01T12:00:00Z"
+s_tags = ["Luke 8:4-15"]
+t_tags = ["hearing", "growth"]
+
+[[movements]]
+id = "00000000-0000-4000-8000-000000000010"
+name = "Introduction"
+collapsed = false
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000011"
+text = "The parable everyone half-remembers"
+notes = ""
+idea_tag = "hook"
+part_tag = ""
+expanded = false
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000012"
+text = "Why Jesus explains this one but not the others"
+notes = ""
+idea_tag = ""
+part_tag = "opening"
+expanded = false
+
+[[movements]]
+id = "00000000-0000-4000-8000-000000000020"
+name = "The Four Soils"
+collapsed = false
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000021"
+text = "Path — snatched before it roots"
+notes = ""
+idea_tag = "soil"
+part_tag = ""
+expanded = false
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000022"
+text = "Rocky ground — quick joy, no depth"
+notes = "Persecution and trouble reveal what was never rooted, not what was lost."
+idea_tag = "soil"
+part_tag = ""
+expanded = true
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000023"
+text = "Thorns — choked by worry and wealth"
+notes = ""
+idea_tag = "soil"
+part_tag = ""
+expanded = false
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000024"
+text = "Good soil — hears, holds, bears fruit"
+notes = ""
+idea_tag = "soil"
+part_tag = "climax"
+expanded = false
+
+[[movements]]
+id = "00000000-0000-4000-8000-000000000030"
+name = "So What?"
+collapsed = false
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000031"
+text = "Which soil are we today, not which soil are we always"
+notes = ""
+idea_tag = ""
+part_tag = "application"
+expanded = false
+
+[[movements.ideas]]
+id = "00000000-0000-4000-8000-000000000032"
+text = "The sower keeps sowing regardless of the soil"
+notes = ""
+idea_tag = ""
+part_tag = "application"
+expanded = false
