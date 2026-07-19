@@ -1,6 +1,6 @@
 [package]
 name = "iskra"
-version = "0.2.1-dev2"
+version = "0.2.1-dev3"
 edition = "2021"
 license = "MIT"
 description = "Sermon planning for preachers who work from structured notes"
@@ -23,6 +23,7 @@ serde_json = "1.0"
 git2 = "0.20"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 keyring = { version = "3", features = ["sync-secret-service"] }
+pangocairo = "0.18"
 
 [dev-dependencies]
 tempfile = "3"

@@ -37,6 +37,12 @@ pub struct Config {
     pub recent_sermons: Vec<PathBuf>,
     #[serde(default = "default_autosave_debounce_ms")]
     pub autosave_debounce_ms: u64,
+    #[serde(default = "default_true")]
+    pub print_include_notes: bool,
+    #[serde(default)]
+    pub print_include_tags: bool,
+    #[serde(default = "default_print_font_pt")]
+    pub print_font_pt: f64,
 }
 
 fn default_work_dir() -> PathBuf {
@@ -58,6 +64,9 @@ fn default_window_height() -> i32 {
 fn default_autosave_debounce_ms() -> u64 {
     800
 }
+fn default_print_font_pt() -> f64 {
+    13.0
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -72,6 +81,9 @@ impl Default for Config {
             last_sermon: None,
             recent_sermons: Vec::new(),
             autosave_debounce_ms: default_autosave_debounce_ms(),
+            print_include_notes: true,
+            print_include_tags: false,
+            print_font_pt: default_print_font_pt(),
         }
     }
 }

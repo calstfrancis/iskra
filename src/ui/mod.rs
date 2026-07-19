@@ -12,6 +12,7 @@ pub mod idea_row;
 pub mod lectionary_panel;
 pub mod library_window;
 pub mod movement_card;
+pub mod preaching_print;
 pub mod preaching_view;
 pub mod status_bar;
 pub mod styles;

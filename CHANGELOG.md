@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.1-dev2] — Movement tools, multi-select, and workflow shortcuts
+## [0.2.1-dev3] — Movement tools, multi-select, and workflow shortcuts
 
 ### Added
 - Right-click blank space in a movement to split it: everything from that point down moves into a new movement inserted right below.
@@ -18,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - "Recently deleted" tray in the status bar — a session-scoped safety net listing the last 20 deleted ideas/movements with one-click restore, alongside undo.
 - "Copy movement to another sermon…" button on every movement header, opening a sermon picker and appending a duplicate of the movement (fresh ids) to the chosen sermon's file.
 - Right-click a lectionary reading in the sidebar to add it as a scripture tag on the sermon.
+- Preaching View can now actually be printed (Ctrl+P, or the new print button next to close): a dedicated paginated layout — not the on-screen fullscreen view reused — with page-aware breaks that avoid stranding a movement heading alone at the bottom of a page, a running header (sermon title) and footer (page X of Y) on every sheet, and an "Iskra" tab in the print dialog for including/excluding notes, including/excluding idea/part tags, and setting the print font size. These settings are remembered per machine for next time.
 
 ### Changed
 - Idea/part tags moved from a separate row hanging below each idea bar into small inline chips within the bar itself, right after the idea text — every idea is now exactly one row tall regardless of whether it's tagged, instead of always reserving a second row (even when untagged, as a ghosted placeholder). An untagged chip collapses to a bare "+" icon rather than a full-width ghost pill, so untagged ideas cost only a small icon's worth of extra width, not a whole placeholder tag.

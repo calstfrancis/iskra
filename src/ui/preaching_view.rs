@@ -2,17 +2,22 @@
 //! at the pulpit — distinct from Rubric's Typst export (`sermon_export.rs`),
 //! this never leaves the screen and has no formatting options.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gtk4::prelude::*;
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Overlay, ScrolledWindow};
 
-use crate::model::Sermon;
+use crate::state::AppState;
+use crate::ui::preaching_print;
 
 pub struct PreachingView {
     window: gtk4::Window,
 }
 
 impl PreachingView {
-    pub fn new(parent: &impl IsA<gtk4::Window>, sermon: &Sermon) -> Self {
+    pub fn new(parent: &impl IsA<gtk4::Window>, state: &Rc<RefCell<AppState>>) -> Self {
+        let sermon = state.borrow().sermon.clone();
         let window = gtk4::Window::new();
         window.set_transient_for(Some(parent));
         window.set_decorated(false);
@@ -85,9 +90,20 @@ impl PreachingView {
         close_btn.set_margin_end(16);
         close_btn.set_tooltip_text(Some("Close (Esc)"));
 
+        let print_btn = Button::from_icon_name("document-print-symbolic");
+        print_btn.add_css_class("flat");
+        print_btn.add_css_class("circular");
+        print_btn.add_css_class("osd");
+        print_btn.set_valign(Align::Start);
+        print_btn.set_halign(Align::End);
+        print_btn.set_margin_top(16);
+        print_btn.set_margin_end(64);
+        print_btn.set_tooltip_text(Some("Print (Ctrl+P)"));
+
         let overlay = Overlay::new();
         overlay.set_child(Some(&scroll));
         overlay.add_overlay(&close_btn);
+        overlay.add_overlay(&print_btn);
 
         window.set_child(Some(&overlay));
 
@@ -96,11 +112,21 @@ impl PreachingView {
             close_btn.connect_clicked(move |_| window.close());
         }
         {
+            let window = window.clone();
+            let state = state.clone();
+            print_btn.connect_clicked(move |_| preaching_print::print_sermon(&window, &state));
+        }
+        {
             let for_key = window.clone();
+            let state = state.clone();
             let key_ctl = gtk4::EventControllerKey::new();
-            key_ctl.connect_key_pressed(move |_, key, _, _| {
+            key_ctl.connect_key_pressed(move |_, key, _, modifiers| {
                 if key == gtk4::gdk::Key::Escape {
                     for_key.close();
+                    return glib::Propagation::Stop;
+                }
+                if key == gtk4::gdk::Key::p && modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK) {
+                    preaching_print::print_sermon(&for_key, &state);
                     return glib::Propagation::Stop;
                 }
                 glib::Propagation::Proceed

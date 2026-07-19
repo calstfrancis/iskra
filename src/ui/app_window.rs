@@ -283,7 +283,7 @@ impl AppWindow {
                     && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK)
                     && key == gtk4::gdk::Key::P
                 {
-                    PreachingView::new(&win_for_closure, &state.borrow().sermon).present();
+                    PreachingView::new(&win_for_closure, &state).present();
                     return glib::Propagation::Stop;
                 }
                 glib::Propagation::Proceed
@@ -298,7 +298,7 @@ impl AppWindow {
             let window = window.clone();
             preaching_view_item.connect_clicked(move |_| {
                 menu_popover.popdown();
-                PreachingView::new(&window, &state.borrow().sermon).present();
+                PreachingView::new(&window, &state).present();
             });
         }
 
@@ -515,7 +515,7 @@ impl AppWindow {
                     ExportDialog::new(&window, state.borrow().sermon.clone()).present();
                 }
                 "preaching_view" => {
-                    PreachingView::new(&window, &state.borrow().sermon).present();
+                    PreachingView::new(&window, &state).present();
                 }
                 "history" => open_history_window(&window, &state, &toast_overlay),
                 "undo" => {
