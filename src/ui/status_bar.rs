@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Popover, Separator};
+use gtk4::{Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Popover, ScrolledWindow, Separator};
 
 use crate::commands::{Cmd, SermonTagKind};
 use crate::model::{Idea, Movement, Sermon};
@@ -67,7 +67,7 @@ impl StatusBar {
         root.append(&s_group);
 
         let s_tags_box = GtkBox::new(Orientation::Horizontal, 4);
-        root.append(&s_tags_box);
+        root.append(&wrap_tags_box(&s_tags_box));
 
         root.append(&Separator::new(Orientation::Vertical));
 
@@ -75,7 +75,7 @@ impl StatusBar {
         root.append(&t_group);
 
         let t_tags_box = GtkBox::new(Orientation::Horizontal, 4);
-        root.append(&t_tags_box);
+        root.append(&wrap_tags_box(&t_tags_box));
 
         let spacer = GtkBox::new(Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
@@ -261,6 +261,26 @@ impl StatusBar {
     }
 }
 
+/// Bounds a tag-chip row's width so it can never force the status bar (and
+/// so the whole window) to keep growing as tags accumulate — nothing
+/// previously capped this at all, and enough tags (scripture citations
+/// especially, since `editor.rs` now adds one automatically per completed
+/// `@citation` without any manual "is this too many" pause) could make the
+/// window's natural width balloon past any sane bound. Scrolls internally
+/// past `MAX_TAGS_ROW_WIDTH` instead.
+const MAX_TAGS_ROW_WIDTH: i32 = 260;
+
+fn wrap_tags_box(tags_box: &GtkBox) -> ScrolledWindow {
+    let scroller = ScrolledWindow::new();
+    scroller.set_child(Some(tags_box));
+    scroller.set_vscrollbar_policy(gtk4::PolicyType::Never);
+    scroller.set_hscrollbar_policy(gtk4::PolicyType::Automatic);
+    scroller.set_propagate_natural_width(true);
+    scroller.set_max_content_width(MAX_TAGS_ROW_WIDTH);
+    scroller.set_valign(gtk4::Align::Center);
+    scroller
+}
+
 /// A small icon + dim caption label pair, for the "Scripture"/"Themes"
 /// group headers — the words alone read as easy-to-skim-past text at
 /// caption size, an icon gives the eye something to anchor on first.
@@ -292,6 +312,9 @@ fn rebuild_tag_group(container: &GtkBox, tags: &[String], kind: SermonTagKind, a
         });
 
         let label = Label::new(Some(tag));
+        label.set_max_width_chars(20);
+        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        label.set_tooltip_text(Some(tag));
         chip.append(&label);
 
         let remove_icon = Image::from_icon_name("window-close-symbolic");

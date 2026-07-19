@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.1-dev5] — Movement tools, multi-select, and workflow shortcuts
+## [0.2.1-dev6] — Movement tools, multi-select, and workflow shortcuts
 
 ### Added
 - Scripture citations: type `@` in an idea to start a Bible reference (e.g. `@john3:16`), with live autocomplete on the book name. A completed citation automatically adds its formatted reference ("John 3:16") as a scripture tag on the sermon — the same tag shown in the status bar and addable by hand or via the lectionary sidebar. Preaching View and Print render the citation inline as "John 3:16" rather than the typed shorthand, and both now end with a Bibliography section listing every scripture tag on the sermon (citation-derived or manual), sorted in canonical Bible book order.
@@ -32,6 +32,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preaching View: wider gap between heading and body type sizes, a rule above each movement heading, and notes set off with a left border rather than font styling alone.
 
 ### Fixed
+- The status bar's scripture/theme tag row had no width cap at all — enough tags (easy to hit now that scripture citations auto-add one per completed `@citation` with no manual pause to reconsider) could grow the row, and with it the whole window, to an absurd width, in one case spanning past the edge of the screen and crashing the app outright. Tag rows now scroll internally past ~260px instead of forcing the window wider, and individual tag chips ellipsize past 20 characters.
 - Preaching View's close/print/warm-background buttons rendered as completely invisible (though still clickable) — `Button::from_icon_name` and the `osd` style class apparently don't render in this window (a plain `gtk4::Window`, unlike every other window in the app, which are all libadwaita windows). Switched to plain text/glyph labels with an explicit background supplied by our own CSS instead of relying on icon-theme lookup or `osd`.
 - Clicking "+ Add movement" (button or command palette) left nothing focused after the rebuild, so GTK's default focus-chain silently jumped to the first movement's name entry instead — new movements now focus their own name entry, matching "Duplicate movement".
 
