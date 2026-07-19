@@ -18,7 +18,14 @@ pub struct TagPopover {
     entry: Entry,
     quick_picks_box: FlowBox,
     suggestions_box: GtkBox,
+    rename_everywhere_btn: Button,
     census: RefCell<Vec<(String, usize)>>,
+    /// The tag value as it was when this popover last opened — captured in
+    /// `popup_on`, distinct from `entry`'s live (possibly mid-edit) text, so
+    /// "rename everywhere" knows what old value to match against even after
+    /// the entry itself has already been retyped to the new one.
+    original_text: RefCell<String>,
+    on_rename_everywhere: RefCell<Option<Box<dyn Fn(String, String)>>>,
 }
 
 impl TagPopover {
@@ -37,6 +44,15 @@ impl TagPopover {
         let suggestions_box = GtkBox::new(Orientation::Vertical, 0);
         suggestions_box.set_visible(false);
 
+        let rename_everywhere_btn = Button::new();
+        rename_everywhere_btn.add_css_class("flat");
+        rename_everywhere_btn.set_halign(gtk4::Align::Fill);
+        if let Some(label) = rename_everywhere_btn.child().and_downcast_ref::<gtk4::Label>() {
+            label.set_xalign(0.0);
+            label.set_wrap(true);
+        }
+        rename_everywhere_btn.set_visible(false);
+
         let content = GtkBox::new(Orientation::Vertical, 4);
         content.set_margin_top(6);
         content.set_margin_bottom(6);
@@ -45,6 +61,7 @@ impl TagPopover {
         content.append(&entry);
         content.append(&quick_picks_box);
         content.append(&suggestions_box);
+        content.append(&rename_everywhere_btn);
 
         let popover = Popover::new();
         popover.set_child(Some(&content));
@@ -54,15 +71,52 @@ impl TagPopover {
             entry: entry.clone(),
             quick_picks_box,
             suggestions_box,
+            rename_everywhere_btn,
             census: RefCell::new(Vec::new()),
+            original_text: RefCell::new(String::new()),
+            on_rename_everywhere: RefCell::new(None),
         });
 
         {
             let this = this.clone();
             entry.connect_changed(move |_| this.refresh());
         }
+        {
+            // Fires however the popover was actually shown — the `MenuButton`
+            // it's attached to opens it internally via `set_popover`, so this
+            // module never gets a call through `popup_on` (dead code below,
+            // pre-existing) to hook the "just opened" moment itself.
+            let this = this.clone();
+            let popover = this.popover.clone();
+            popover.connect_show(move |_| {
+                let current = this.entry.text().to_string();
+                *this.original_text.borrow_mut() = current.clone();
+                this.rename_everywhere_btn.set_visible(!current.is_empty());
+                this.rename_everywhere_btn
+                    .set_label(&format!("Rename \"{current}\" everywhere…"));
+            });
+        }
+        {
+            let this = this.clone();
+            let rename_everywhere_btn = this.rename_everywhere_btn.clone();
+            rename_everywhere_btn.connect_clicked(move |_| {
+                let old = this.original_text.borrow().clone();
+                let new = this.entry.text().to_string();
+                if let Some(f) = this.on_rename_everywhere.borrow().as_ref() {
+                    f(old, new);
+                }
+                this.popover.popdown();
+            });
+        }
 
         this
+    }
+
+    /// Called once the tag ids/callbacks it needs are wired — see the
+    /// `idea_row.rs` call sites (mirrors `refresh_tag_button`'s caller-owns-
+    /// the-wiring convention elsewhere in this file).
+    pub fn set_on_rename_everywhere(&self, f: impl Fn(String, String) + 'static) {
+        *self.on_rename_everywhere.borrow_mut() = Some(Box::new(f));
     }
 
     pub fn popover(&self) -> &Popover {

@@ -346,6 +346,16 @@ pub fn default_commands() -> Vec<PaletteItem> {
             subtitle: "Append a new movement to the sermon".into(),
         },
         PaletteItem {
+            id: "collapse_all_movements".into(),
+            label: "Collapse All Movements".into(),
+            subtitle: "Snap every movement closed for a bird's-eye reorder pass".into(),
+        },
+        PaletteItem {
+            id: "expand_all_movements".into(),
+            label: "Expand All Movements".into(),
+            subtitle: "Snap every movement open".into(),
+        },
+        PaletteItem {
             id: "changelog".into(),
             label: "Changelog".into(),
             subtitle: "View what's changed in this version".into(),

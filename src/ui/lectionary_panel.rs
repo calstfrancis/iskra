@@ -2,13 +2,16 @@
 //! Shows the season + colour swatch, the week label, and the four RCL
 //! readings for the sermon's planned date. Empty state when no date is set.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Label, Orientation};
+use gtk4::{Box as GtkBox, Button, Label, Orientation, Popover};
 use libadwaita as adw;
 
+use crate::commands::{Cmd, SermonTagKind};
 use crate::model::Sermon;
+use crate::ui::editor::ApplyFn;
 use crate::ui::styles;
 
 pub struct LectionaryPanel {
@@ -22,6 +25,8 @@ pub struct LectionaryPanel {
     psalm_value: Label,
     epistle_value: Label,
     gospel_value: Label,
+    current_s_tags: RefCell<Vec<String>>,
+    apply: RefCell<Option<ApplyFn>>,
 }
 
 impl LectionaryPanel {
@@ -79,7 +84,7 @@ impl LectionaryPanel {
 
         root.append(&content);
 
-        Rc::new(Self {
+        let panel = Rc::new(Self {
             root,
             empty_status,
             content,
@@ -90,10 +95,26 @@ impl LectionaryPanel {
             psalm_value,
             epistle_value,
             gospel_value,
-        })
+            current_s_tags: RefCell::new(Vec::new()),
+            apply: RefCell::new(None),
+        });
+
+        for value in [&panel.ot_value, &panel.psalm_value, &panel.epistle_value, &panel.gospel_value] {
+            wire_add_scripture_tag(&panel, value);
+        }
+
+        panel
+    }
+
+    /// Stores `apply` so right-clicking a reading can route the resulting
+    /// scripture tag through the single door. Call once, after `apply`
+    /// exists — mirrors `StatusBar::init`.
+    pub fn init(&self, apply: ApplyFn) {
+        *self.apply.borrow_mut() = Some(apply);
     }
 
     pub fn refresh(&self, sermon: &Sermon) {
+        *self.current_s_tags.borrow_mut() = sermon.s_tags.clone();
         match &sermon.lectionary {
             Some(link) => {
                 self.empty_status.set_visible(false);
@@ -114,6 +135,63 @@ impl LectionaryPanel {
             }
         }
     }
+}
+
+/// Right-click a reading value to add its text as a scripture ("s.") tag —
+/// a shortcut for the common case of tagging the sermon with the passage
+/// it's actually about, without retyping the reference by hand in the
+/// status bar's tag entry.
+fn wire_add_scripture_tag(panel: &Rc<LectionaryPanel>, value: &Label) {
+    let click = gtk4::GestureClick::new();
+    click.set_button(gtk4::gdk::BUTTON_SECONDARY);
+    {
+        let panel = panel.clone();
+        let value = value.clone();
+        click.connect_pressed(move |gesture, _n_press, x, y| {
+            let text = value.text().to_string();
+            if text.is_empty() {
+                return;
+            }
+            gesture.set_state(gtk4::EventSequenceState::Claimed);
+
+            let popover = Popover::new();
+            popover.set_parent(&value);
+            popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            popover.set_autohide(true);
+
+            let already_tagged = panel.current_s_tags.borrow().contains(&text);
+            let label = if already_tagged {
+                "Already a scripture tag".to_string()
+            } else {
+                format!("Add \"{text}\" as scripture tag")
+            };
+            let btn = Button::with_label(&label);
+            btn.add_css_class("flat");
+            btn.set_sensitive(!already_tagged);
+            popover.set_child(Some(&btn));
+            {
+                let panel = panel.clone();
+                let popover_for_close = popover.clone();
+                let text = text.clone();
+                btn.connect_clicked(move |_| {
+                    let Some(apply) = panel.apply.borrow().clone() else {
+                        return;
+                    };
+                    let old = panel.current_s_tags.borrow().clone();
+                    let mut new = old.clone();
+                    new.push(text.clone());
+                    apply(Cmd::SetSermonTags { kind: SermonTagKind::S, old, new });
+                    popover_for_close.popdown();
+                });
+            }
+            {
+                let popover_for_closed = popover.clone();
+                popover.connect_closed(move |_| popover_for_closed.unparent());
+            }
+            popover.popup();
+        });
+    }
+    value.add_controller(click);
 }
 
 fn reading_row(label: &str) -> (GtkBox, Label) {

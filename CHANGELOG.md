@@ -5,10 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.1-dev1] — Denser idea rows
+## [0.2.1-dev2] — Movement tools, multi-select, and workflow shortcuts
+
+### Added
+- Right-click blank space in a movement to split it: everything from that point down moves into a new movement inserted right below.
+- Multi-select ideas within a movement via rubber-band drag, or Ctrl/Shift-click on an idea's number. Selected ideas can be dragged together, and bulk-deleted with Delete/BackSpace or a right-click "Delete N ideas" menu item.
+- "Merge with movement above" button on every movement (disabled on the first one) — the inverse of split, folding a movement's ideas onto the previous one and removing it.
+- Idea/part tag quick-filter: Ctrl+click a tag chip to dim every idea that doesn't carry that tag.
+- "Rename everywhere" in the idea/part tag popover — retypes that tag's value on every idea in the sermon that currently shares it, not just the one being edited.
+- Collapse All / Expand All Movements commands in the command palette (Ctrl+K).
+- Alt+Shift+Up/Down jumps the focused idea or movement straight to the top/bottom of its list, alongside the existing single-step Alt+Up/Down.
+- "Recently deleted" tray in the status bar — a session-scoped safety net listing the last 20 deleted ideas/movements with one-click restore, alongside undo.
+- "Copy movement to another sermon…" button on every movement header, opening a sermon picker and appending a duplicate of the movement (fresh ids) to the chosen sermon's file.
+- Right-click a lectionary reading in the sidebar to add it as a scripture tag on the sermon.
 
 ### Changed
 - Idea/part tags moved from a separate row hanging below each idea bar into small inline chips within the bar itself, right after the idea text — every idea is now exactly one row tall regardless of whether it's tagged, instead of always reserving a second row (even when untagged, as a ghosted placeholder). An untagged chip collapses to a bare "+" icon rather than a full-width ghost pill, so untagged ideas cost only a small icon's worth of extra width, not a whole placeholder tag.
+- The idea row's drag handle moved to the left of the number, ahead of the idea text.
+- Status bar's sermon-tag group labels spelled out as "Scripture"/"Themes" instead of "s."/"t.".
+
+### Fixed
+- Clicking "+ Add movement" (button or command palette) left nothing focused after the rebuild, so GTK's default focus-chain silently jumped to the first movement's name entry instead — new movements now focus their own name entry, matching "Duplicate movement".
 
 ## [0.2.0] "First Light" — Workflow improvements: templates, preaching view, history
 

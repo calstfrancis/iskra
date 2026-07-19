@@ -23,7 +23,7 @@ use crate::ui::history_window::HistoryWindow;
 use crate::ui::lectionary_panel::LectionaryPanel;
 use crate::ui::library_window::LibraryWindow;
 use crate::ui::preaching_view::PreachingView;
-use crate::ui::status_bar::StatusBar;
+use crate::ui::status_bar::{DeletedEntry, StatusBar};
 use crate::ui::styles;
 use crate::ui::title_date_popover::TitleDatePopover;
 use crate::ui::welcome_window::WelcomeWindow;
@@ -145,10 +145,25 @@ impl AppWindow {
         );
 
         editor.init_dnd(&state, apply.clone());
+        editor.init_keys(&state, apply.clone());
         editor.rebuild(&state, apply.clone());
         title_date.init(&state, apply.clone());
-        status_bar.init(apply.clone());
+        status_bar.init(apply.clone(), state.clone());
         status_bar.refresh(&state.borrow().sermon);
+        lectionary_panel.init(apply.clone());
+        editor.set_on_copy_movement({
+            let window = window.clone();
+            let state = state.clone();
+            let toast_overlay = toast_overlay.clone();
+            move |movement: crate::model::Movement| {
+                let sermons_dir = state.borrow().config.sermons_dir();
+                let exclude = state.borrow().path.clone();
+                let toast_overlay = toast_overlay.clone();
+                crate::ui::copy_movement_dialog::present(&window, sermons_dir, exclude, movement, move |title| {
+                    toast_overlay.add_toast(adw::Toast::new(&format!("Copied to \"{title}\"")));
+                });
+            }
+        });
 
         {
             let state = state.clone();
@@ -516,10 +531,36 @@ impl AppWindow {
                 "toggle_sidebar" => split_view.set_show_sidebar(!split_view.shows_sidebar()),
                 "add_movement" => {
                     let at = state.borrow().sermon.movements.len();
-                    apply(Cmd::InsertMovement {
-                        at,
-                        movement: crate::model::Movement::new(at),
-                    });
+                    let movement = crate::model::Movement::new(at);
+                    let new_id = movement.id.clone();
+                    apply(Cmd::InsertMovement { at, movement });
+                    editor.focus_by_name(&format!("movement:{new_id}"));
+                }
+                "collapse_all_movements" => {
+                    let cmds: Vec<Cmd> = state
+                        .borrow()
+                        .sermon
+                        .movements
+                        .iter()
+                        .filter(|m| !m.collapsed)
+                        .map(|m| Cmd::ToggleMovementCollapsed { id: m.id.clone() })
+                        .collect();
+                    if !cmds.is_empty() {
+                        apply(Cmd::Composite(cmds));
+                    }
+                }
+                "expand_all_movements" => {
+                    let cmds: Vec<Cmd> = state
+                        .borrow()
+                        .sermon
+                        .movements
+                        .iter()
+                        .filter(|m| m.collapsed)
+                        .map(|m| Cmd::ToggleMovementCollapsed { id: m.id.clone() })
+                        .collect();
+                    if !cmds.is_empty() {
+                        apply(Cmd::Composite(cmds));
+                    }
                 }
                 "changelog" => show_changelog(&window),
                 other => {
@@ -751,6 +792,7 @@ fn make_apply(
     Rc::new(move |cmd: Cmd| {
         let structural = cmd.is_structural();
         note_past_sermon_reuse(&cmd, &state, &toast_overlay);
+        let deletions = collect_deletions(&cmd);
         {
             let mut st = state.borrow_mut();
             let AppState { undo, sermon, .. } = &mut *st;
@@ -758,6 +800,7 @@ fn make_apply(
             st.dirty = true;
         }
         status_bar.set_dirty();
+        status_bar.record_deletions(deletions);
         if structural {
             let recurse = make_apply(
                 &state,
@@ -791,6 +834,34 @@ fn show_toast(overlay: &adw::ToastOverlay, message: &str) {
 /// noticed. Only fires on genuinely new tags (not on removal), and only
 /// scripture tags (`s.`), not theme (`t.`) tags — a repeated theme is far
 /// more common and expected than a repeated passage.
+/// Feeds `StatusBar`'s "Recently deleted" tray — walks `cmd` (recursing into
+/// `Composite`, since bulk delete/merge-movement/etc. all wrap their deletes
+/// in one) collecting every `DeleteIdea`/`DeleteMovement` it contains.
+fn collect_deletions(cmd: &Cmd) -> Vec<DeletedEntry> {
+    fn walk(cmd: &Cmd, out: &mut Vec<DeletedEntry>) {
+        match cmd {
+            Cmd::DeleteIdea { movement, index, idea } => out.push(DeletedEntry::Idea {
+                movement: *movement,
+                index: *index,
+                idea: idea.clone(),
+            }),
+            Cmd::DeleteMovement { at, movement } => out.push(DeletedEntry::Movement {
+                at: *at,
+                movement: movement.clone(),
+            }),
+            Cmd::Composite(cmds) => {
+                for c in cmds {
+                    walk(c, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(cmd, &mut out);
+    out
+}
+
 fn note_past_sermon_reuse(cmd: &Cmd, state: &Rc<RefCell<AppState>>, toast_overlay: &adw::ToastOverlay) {
     let Cmd::SetSermonTags { kind: SermonTagKind::S, old, new } = cmd else {
         return;

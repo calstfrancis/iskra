@@ -217,6 +217,18 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         font-style: italic; \
         opacity: 0.7; \
     } \
+    .idea-row-selected .idea-bar { \
+        background: alpha(@accent_color, 0.16); \
+        border-radius: 6px; \
+    } \
+    .selection-rect { \
+        background: alpha(@accent_color, 0.12); \
+        border: 1px solid alpha(@accent_color, 0.6); \
+        border-radius: 4px; \
+    } \
+    .idea-row-tag-dimmed { \
+        opacity: 0.35; \
+    } \
     .season-dot-6b21a8 { background-color: #6B21A8; } \
     .season-dot-b45309 { background-color: #B45309; } \
     .season-dot-15803d { background-color: #15803D; } \

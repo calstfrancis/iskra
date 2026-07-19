@@ -488,6 +488,88 @@ mod tests {
     }
 
     #[test]
+    fn split_movement_composite_moves_the_tail_into_a_new_movement_in_order() {
+        // Same shape `editor.rs`'s right-click "Split movement here" builds:
+        // insert an empty movement right after, then move everything from
+        // `split_at` onward into it, each `MoveIdea` still reading `split_at`
+        // as its `from` index since removing from that index each time
+        // shifts the remainder down to fill it.
+        let mut s = Sermon::new();
+        s.movements.clear();
+        s.movements.push(Movement::new(0));
+        for _ in 0..4 {
+            s.movements[0].ideas.push(Idea::new());
+        }
+        let ids: Vec<String> = s.movements[0].ideas.iter().map(|i| i.id.clone()).collect();
+        let before = s.clone();
+        let split_at = 2;
+        let ideas_len = s.movements[0].ideas.len();
+
+        let mut cmds = vec![Cmd::InsertMovement {
+            at: 1,
+            movement: Movement::new(1),
+        }];
+        for offset in 0..(ideas_len - split_at) {
+            cmds.push(Cmd::MoveIdea {
+                from: (0, split_at),
+                to: (1, offset),
+            });
+        }
+        let cmd = Cmd::Composite(cmds);
+        cmd.apply_to(&mut s);
+
+        assert_eq!(s.movements.len(), 2);
+        assert_eq!(
+            s.movements[0].ideas.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
+            ids[..2]
+        );
+        assert_eq!(
+            s.movements[1].ideas.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
+            ids[2..]
+        );
+
+        cmd.inverted().apply_to(&mut s);
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn bulk_delete_composite_removes_highest_index_first() {
+        // Same shape `editor.rs::bulk_delete_cmd` builds: descending by
+        // (movement, index) so within a movement the highest index is
+        // always removed first, leaving lower queued indices valid.
+        let mut s = Sermon::new();
+        s.movements.clear();
+        s.movements.push(Movement::new(0));
+        for _ in 0..5 {
+            s.movements[0].ideas.push(Idea::new());
+        }
+        let ids: Vec<String> = s.movements[0].ideas.iter().map(|i| i.id.clone()).collect();
+        let before = s.clone();
+
+        let mut positions = vec![(0usize, 1usize), (0, 4), (0, 3)];
+        positions.sort_by(|a, b| b.cmp(a));
+        let cmd = Cmd::Composite(
+            positions
+                .into_iter()
+                .map(|(m, i)| Cmd::DeleteIdea {
+                    movement: m,
+                    index: i,
+                    idea: s.movements[m].ideas[i].clone(),
+                })
+                .collect(),
+        );
+        cmd.apply_to(&mut s);
+
+        assert_eq!(
+            s.movements[0].ideas.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
+            vec![ids[0].clone(), ids[2].clone()]
+        );
+
+        cmd.inverted().apply_to(&mut s);
+        assert_eq!(s, before);
+    }
+
+    #[test]
     fn text_edits_coalesce_within_window() {
         let (mut s, id) = sermon_with_one_idea();
         let mut stack = UndoStack::new();

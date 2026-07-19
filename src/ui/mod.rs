@@ -2,6 +2,7 @@ pub mod app_window;
 pub mod backup_setup;
 pub mod changelog_window;
 pub mod command_palette;
+pub mod copy_movement_dialog;
 pub mod dnd;
 pub mod editor;
 pub mod export_dialog;

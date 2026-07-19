@@ -4,14 +4,42 @@
 //! far right, which opens the changelog window.
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Button, Entry, Label, MenuButton, Orientation, Popover, Separator};
 
 use crate::commands::{Cmd, SermonTagKind};
-use crate::model::Sermon;
+use crate::model::{Idea, Movement, Sermon};
+use crate::state::AppState;
 use crate::ui::editor::ApplyFn;
+
+const MAX_RECENT_DELETIONS: usize = 20;
+
+/// One deleted idea or movement, kept around for the "Recently deleted"
+/// tray — a session-scoped safety net alongside undo (never persisted, lost
+/// on quit), for the case of noticing a delete several edits later, where
+/// plain Ctrl+Z would have to unwind everything since. Carries the same
+/// data `Cmd::DeleteIdea`/`Cmd::DeleteMovement` already carry for their own
+/// undo inversion (see `commands.rs`), reused here rather than duplicated.
+pub enum DeletedEntry {
+    Idea { movement: usize, index: usize, idea: Idea },
+    Movement { at: usize, movement: Movement },
+}
+
+impl DeletedEntry {
+    fn label(&self) -> String {
+        match self {
+            DeletedEntry::Idea { idea, .. } if !idea.text.is_empty() => idea.text.clone(),
+            DeletedEntry::Idea { .. } => "(untitled idea)".to_string(),
+            DeletedEntry::Movement { movement, .. } if !movement.name.is_empty() => {
+                format!("Movement: {}", movement.name)
+            }
+            DeletedEntry::Movement { .. } => "(untitled movement)".to_string(),
+        }
+    }
+}
 
 pub struct StatusBar {
     pub root: GtkBox,
@@ -19,7 +47,12 @@ pub struct StatusBar {
     s_tags_box: GtkBox,
     t_tags_box: GtkBox,
     saved_label: Label,
+    recent_btn: MenuButton,
+    recent_popover: Popover,
+    recent_list: GtkBox,
+    recent_deletions: RefCell<VecDeque<DeletedEntry>>,
     apply: RefCell<Option<ApplyFn>>,
+    state: RefCell<Option<Rc<RefCell<AppState>>>>,
 }
 
 impl StatusBar {
@@ -30,7 +63,7 @@ impl StatusBar {
         root.set_margin_start(10);
         root.set_margin_end(10);
 
-        let s_group = Label::new(Some("s."));
+        let s_group = Label::new(Some("Scripture"));
         s_group.add_css_class("dim-label");
         s_group.add_css_class("caption");
         s_group.set_tooltip_text(Some("Scripture tags"));
@@ -41,7 +74,7 @@ impl StatusBar {
 
         root.append(&Separator::new(Orientation::Vertical));
 
-        let t_group = Label::new(Some("t."));
+        let t_group = Label::new(Some("Themes"));
         t_group.add_css_class("dim-label");
         t_group.add_css_class("caption");
         t_group.set_tooltip_text(Some("Theme tags"));
@@ -58,6 +91,23 @@ impl StatusBar {
         saved_label.add_css_class("dim-label");
         saved_label.add_css_class("caption");
         root.append(&saved_label);
+
+        let recent_btn = MenuButton::new();
+        recent_btn.set_icon_name("edit-undo-symbolic");
+        recent_btn.add_css_class("flat");
+        recent_btn.add_css_class("dim-label");
+        recent_btn.set_tooltip_text(Some("Recently deleted"));
+        recent_btn.set_visible(false);
+
+        let recent_list = GtkBox::new(Orientation::Vertical, 2);
+        recent_list.set_margin_top(6);
+        recent_list.set_margin_bottom(6);
+        recent_list.set_margin_start(6);
+        recent_list.set_margin_end(6);
+        let recent_popover = Popover::new();
+        recent_popover.set_child(Some(&recent_list));
+        recent_btn.set_popover(Some(&recent_popover));
+        root.append(&recent_btn);
 
         let sep = Separator::new(Orientation::Vertical);
         sep.add_css_class("statusbar-sep");
@@ -76,14 +126,24 @@ impl StatusBar {
             s_tags_box,
             t_tags_box,
             saved_label,
+            recent_btn,
+            recent_popover,
+            recent_list,
+            recent_deletions: RefCell::new(VecDeque::new()),
             apply: RefCell::new(None),
+            state: RefCell::new(None),
         })
     }
 
-    /// Stores `apply` so tag chips built by `refresh` can route add/remove
-    /// through the single door. Call once, after `apply` exists.
-    pub fn init(&self, apply: ApplyFn) {
+    /// Stores `apply` and `state` so tag chips built by `refresh` can route
+    /// add/remove through the single door, and so the "Recently deleted"
+    /// tray can clamp a restore's target indices against the sermon's
+    /// *current* shape (structural edits since the deletion may have moved
+    /// or removed the movement it originally lived in). Call once, after
+    /// both exist.
+    pub fn init(&self, apply: ApplyFn, state: Rc<RefCell<AppState>>) {
         *self.apply.borrow_mut() = Some(apply);
+        *self.state.borrow_mut() = Some(state);
     }
 
     pub fn refresh(&self, sermon: &Sermon) {
@@ -104,6 +164,106 @@ impl StatusBar {
     pub fn set_saved(&self) {
         let now = chrono::Local::now().format("%-I:%M %p");
         self.saved_label.set_text(&format!("Saved {now}"));
+    }
+
+    /// Called from `app_window.rs::make_apply` for every applied `Cmd` that
+    /// contained at least one `DeleteIdea`/`DeleteMovement` (see
+    /// `collect_deletions`). Newest first, capped at `MAX_RECENT_DELETIONS`.
+    pub fn record_deletions(self: &Rc<Self>, entries: Vec<DeletedEntry>) {
+        if entries.is_empty() {
+            return;
+        }
+        {
+            let mut list = self.recent_deletions.borrow_mut();
+            for entry in entries {
+                list.push_front(entry);
+            }
+            while list.len() > MAX_RECENT_DELETIONS {
+                list.pop_back();
+            }
+        }
+        self.refresh_recent_list();
+    }
+
+    fn refresh_recent_list(self: &Rc<Self>) {
+        while let Some(child) = self.recent_list.first_child() {
+            self.recent_list.remove(&child);
+        }
+        let count = self.recent_deletions.borrow().len();
+        self.recent_btn.set_visible(count > 0);
+        for idx in 0..count {
+            let label_text = self.recent_deletions.borrow()[idx].label();
+            let row = GtkBox::new(Orientation::Horizontal, 6);
+            let label = Label::new(Some(&label_text));
+            label.set_xalign(0.0);
+            label.set_hexpand(true);
+            label.set_max_width_chars(28);
+            label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            row.append(&label);
+            let restore_btn = Button::with_label("Restore");
+            restore_btn.add_css_class("flat");
+            {
+                let this = self.clone();
+                restore_btn.connect_clicked(move |_| this.restore_deletion(idx));
+            }
+            row.append(&restore_btn);
+            self.recent_list.append(&row);
+        }
+    }
+
+    /// Re-inserts the entry at `idx`, clamping its target movement/index
+    /// against the sermon's current shape — structural edits since the
+    /// deletion (movements added/removed/reordered) may have made the
+    /// original position no longer valid, and `Cmd::InsertIdea`/
+    /// `InsertMovement` index straight into a `Vec` with no bounds check of
+    /// their own (see `commands.rs::Cmd::apply_to`), so an un-clamped
+    /// restore of a stale entry could panic instead of just landing
+    /// somewhere slightly different.
+    fn restore_deletion(self: &Rc<Self>, idx: usize) {
+        let (Some(apply), Some(state)) = (self.apply.borrow().clone(), self.state.borrow().clone()) else {
+            return;
+        };
+        let entry = {
+            let mut list = self.recent_deletions.borrow_mut();
+            if idx >= list.len() {
+                return;
+            }
+            list.remove(idx)
+        };
+        if let Some(entry) = entry {
+            let movements_len = state.borrow().sermon.movements.len();
+            let cmd = match entry {
+                DeletedEntry::Idea { .. } if movements_len == 0 => {
+                    // Nowhere left to put it back — every movement was
+                    // deleted since. Drop the restore rather than crash.
+                    self.refresh_recent_list();
+                    self.recent_popover.popdown();
+                    return;
+                }
+                DeletedEntry::Idea { movement, index, idea } => {
+                    let movement = movement.min(movements_len - 1);
+                    let idea_count = state
+                        .borrow()
+                        .sermon
+                        .movements
+                        .get(movement)
+                        .map(|m| m.ideas.len())
+                        .unwrap_or(0);
+                    Cmd::InsertIdea {
+                        movement,
+                        index: index.min(idea_count),
+                        idea,
+                    }
+                }
+                DeletedEntry::Movement { at, movement } => Cmd::InsertMovement {
+                    at: at.min(movements_len),
+                    movement,
+                },
+            };
+            apply(cmd);
+        }
+        self.refresh_recent_list();
+        self.recent_popover.popdown();
     }
 }
 

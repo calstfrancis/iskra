@@ -1,5 +1,5 @@
-//! A single idea bar: number · click-to-edit text · idea/part tag chips ·
-//! expansion triangle (→ notes) · grabber — every idea is exactly one row
+//! A single idea bar: grabber · number · click-to-edit text · idea/part tag
+//! chips · expansion triangle (→ notes) — every idea is exactly one row
 //! tall regardless of whether it's tagged. An untagged chip collapses to a
 //! bare "+" icon rather than a ghosted placeholder pill, so untagged ideas
 //! don't cost any more width than tagged ones beyond the icon itself. The
@@ -46,12 +46,20 @@ pub fn build_idea_row(
     on_enter: impl Fn() + 'static,
     on_duplicate: impl Fn() + 'static,
     on_move: impl Fn(i32) + 'static,
+    on_select: impl Fn(bool, bool) + 'static,
+    on_toggle_tag_filter: impl Fn(String) + 'static,
+    on_rename_idea_tag_everywhere: impl Fn(String, String) + 'static,
+    on_rename_part_tag_everywhere: impl Fn(String, String) + 'static,
 ) -> IdeaRowWidgets {
+    let on_toggle_tag_filter: Rc<dyn Fn(String)> = Rc::new(on_toggle_tag_filter);
     let root = GtkBox::new(Orientation::Vertical, 2);
     root.add_css_class("idea-row");
 
     let bar = GtkBox::new(Orientation::Horizontal, 6);
     bar.add_css_class("idea-bar");
+
+    let grabber = dnd::drag_grabber("Drag to reorder");
+    bar.append(&grabber);
 
     let number_label = Label::new(Some(&number.to_string()));
     number_label.add_css_class("idea-number");
@@ -59,7 +67,25 @@ pub fn build_idea_row(
     number_label.set_justify(gtk4::Justification::Center);
     number_label.set_halign(Align::Center);
     number_label.set_valign(Align::Center);
+    number_label.set_can_target(true);
     bar.append(&number_label);
+    {
+        // Ctrl/Shift-click on the number toggles/extends multi-selection.
+        // A plain click is left alone (does nothing) so clicking the number
+        // by habit doesn't surprise anyone — the number is otherwise inert.
+        let click = gtk4::GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        click.connect_pressed(move |gesture, _n_press, _x, _y| {
+            let mods = gesture.current_event_state();
+            let ctrl = mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+            let shift = mods.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
+            if ctrl || shift {
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+                on_select(ctrl, shift);
+            }
+        });
+        number_label.add_controller(click);
+    }
 
     let entry = gtk4::Entry::new();
     entry.set_has_frame(false);
@@ -78,6 +104,8 @@ pub fn build_idea_row(
     idea_tag_btn.add_css_class("flat");
     refresh_tag_button(&idea_tag_btn, &idea.idea_tag, "Add idea tag");
     idea_tag_btn.set_popover(Some(idea_tag_popover.popover()));
+    wire_tag_filter_toggle(&idea_tag_btn, idea_tag_popover.entry(), &on_toggle_tag_filter);
+    idea_tag_popover.set_on_rename_everywhere(on_rename_idea_tag_everywhere);
     bar.append(&idea_tag_btn);
 
     let part_tag_popover = TagPopover::new("Part tag…");
@@ -89,6 +117,8 @@ pub fn build_idea_row(
     part_tag_btn.add_css_class("flat");
     refresh_tag_button(&part_tag_btn, &idea.part_tag, "Add part tag");
     part_tag_btn.set_popover(Some(part_tag_popover.popover()));
+    wire_tag_filter_toggle(&part_tag_btn, part_tag_popover.entry(), &on_toggle_tag_filter);
+    part_tag_popover.set_on_rename_everywhere(on_rename_part_tag_everywhere);
     bar.append(&part_tag_btn);
 
     let expander = ToggleButton::new();
@@ -113,9 +143,6 @@ pub fn build_idea_row(
     delete_btn.add_css_class("idea-delete");
     delete_btn.set_tooltip_text(Some("Delete idea"));
     bar.append(&delete_btn);
-
-    let grabber = dnd::drag_grabber("Drag to reorder");
-    bar.append(&grabber);
 
     root.append(&bar);
 
@@ -161,19 +188,23 @@ pub fn build_idea_row(
     }
     {
         // Alt+Up/Alt+Down reorders this idea within its movement — a
-        // keyboard alternative to dragging the grabber.
+        // keyboard alternative to dragging the grabber. Alt+Shift+Up/Down
+        // jumps straight to the top/bottom instead of one step at a time;
+        // `on_move` takes `i32::MIN`/`i32::MAX` as "to the very end" sentinels
+        // rather than a literal delta (see `editor.rs`'s interpretation).
         let key_ctl = gtk4::EventControllerKey::new();
         key_ctl.connect_key_pressed(move |_, key, _, modifiers| {
             if !modifiers.contains(gtk4::gdk::ModifierType::ALT_MASK) {
                 return glib::Propagation::Proceed;
             }
+            let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
             match key {
                 gtk4::gdk::Key::Up => {
-                    on_move(-1);
+                    on_move(if shift { i32::MIN } else { -1 });
                     glib::Propagation::Stop
                 }
                 gtk4::gdk::Key::Down => {
-                    on_move(1);
+                    on_move(if shift { i32::MAX } else { 1 });
                     glib::Propagation::Stop
                 }
                 _ => glib::Propagation::Proceed,
@@ -227,6 +258,38 @@ pub fn build_idea_row(
         idea_tag_popover,
         part_tag_popover,
     }
+}
+
+/// Ctrl+click on a tag chip toggles the sermon-wide quick-filter for that
+/// tag's current value instead of opening the chip's edit popover — claimed
+/// only when Ctrl is held and the tag isn't empty, so a plain click still
+/// opens the `MenuButton`'s popover exactly as before. Reads the tag text
+/// live from `entry` at click time (not a value captured at row-build time)
+/// since a tag edit doesn't trigger a rebuild (`SetIdeaTag` isn't
+/// structural — see `commands.rs::Cmd::is_structural`), so a baked-in
+/// closure would go stale the moment the tag was retyped.
+fn wire_tag_filter_toggle(btn: &MenuButton, entry: &gtk4::Entry, on_toggle_tag_filter: &Rc<dyn Fn(String)>) {
+    let click = gtk4::GestureClick::new();
+    click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+    {
+        let entry = entry.clone();
+        let on_toggle_tag_filter = on_toggle_tag_filter.clone();
+        click.connect_pressed(move |gesture, _n_press, _x, _y| {
+            if !gesture
+                .current_event_state()
+                .contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+            {
+                return;
+            }
+            let text = entry.text().to_string();
+            if text.is_empty() {
+                return;
+            }
+            gesture.set_state(gtk4::EventSequenceState::Claimed);
+            on_toggle_tag_filter(text);
+        });
+    }
+    btn.add_controller(click);
 }
 
 /// Renders a tag chip as its colored text pill when set, or collapses it to

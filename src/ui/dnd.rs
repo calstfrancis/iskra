@@ -21,6 +21,7 @@ use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, DragSource, Image, Orientation, ScrolledWindow, WidgetPaintable};
 
 pub const IDEA_PAYLOAD_PREFIX: &str = "idea:";
+pub const IDEAS_PAYLOAD_PREFIX: &str = "ideas:";
 pub const MOVEMENT_PAYLOAD_PREFIX: &str = "movement:";
 const AUTOSCROLL_MARGIN: f64 = 40.0;
 const AUTOSCROLL_STEP: f64 = 12.0;
@@ -222,24 +223,27 @@ pub fn autoscroll_if_near_edge(scroller: &ScrolledWindow, y: f64) {
     }
 }
 
-/// Wires a `DragSource` onto `grabber` carrying `payload` (already prefixed
-/// with [`IDEA_PAYLOAD_PREFIX`] or [`MOVEMENT_PAYLOAD_PREFIX`]), showing
-/// `preview_widget` as the drag icon and toggling `.dragging` on it for the
-/// gesture's duration. `drag_active` is set for the duration of the drag so
-/// callers can defer any rebuild that would destroy the widget GTK's drag
-/// machinery still holds a reference to — a real GTK4 crash class otherwise.
+/// Wires a `DragSource` onto `grabber` carrying whatever `payload` returns
+/// (already prefixed with [`IDEA_PAYLOAD_PREFIX`]/[`IDEAS_PAYLOAD_PREFIX`]/
+/// [`MOVEMENT_PAYLOAD_PREFIX`]) at the moment the drag actually starts —
+/// a closure rather than a fixed `String` so a caller can decide at
+/// drag-start time whether this grabber's row is part of a live multi-idea
+/// selection (see `editor.rs`'s idea-row payload closure), not just what it
+/// was when the row was built. Shows `preview_widget` as the drag icon and
+/// toggles `.dragging` on it for the gesture's duration. `drag_active` is
+/// set for the duration of the drag so callers can defer any rebuild that
+/// would destroy the widget GTK's drag machinery still holds a reference
+/// to — a real GTK4 crash class otherwise.
 pub fn setup_drag_source(
     grabber: &impl IsA<gtk4::Widget>,
     preview_widget: &impl IsA<gtk4::Widget>,
-    payload: String,
+    payload: impl Fn() -> String + 'static,
     drag_active: &Rc<Cell<bool>>,
 ) {
     let source = DragSource::new();
     source.set_actions(gtk4::gdk::DragAction::MOVE);
     source.connect_prepare(move |_, _, _| {
-        Some(ContentProvider::for_value(&Value::from(&DragPayload(
-            payload.clone(),
-        ))))
+        Some(ContentProvider::for_value(&Value::from(&DragPayload(payload()))))
     });
 
     let preview = preview_widget.clone().upcast::<gtk4::Widget>();

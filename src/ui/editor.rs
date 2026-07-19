@@ -11,6 +11,7 @@
 //! child list.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -18,7 +19,7 @@ use gtk4::{Align, Box as GtkBox, Button, DropTarget, Label, Orientation, Scrolle
 use libadwaita as adw;
 
 use crate::commands::{Cmd, TagKind};
-use crate::model::{Idea, Movement};
+use crate::model::{Idea, Movement, Sermon};
 use crate::state::AppState;
 use crate::ui::dnd::{self, DropZone};
 use crate::ui::idea_row::build_idea_row;
@@ -29,6 +30,10 @@ pub struct Editor {
     column: GtkBox,
     indicator: GtkBox,
     drag_active: Rc<Cell<bool>>,
+    selected: Rc<RefCell<HashSet<String>>>,
+    last_selected: Rc<RefCell<Option<String>>>,
+    active_tag_filter: Rc<RefCell<Option<String>>>,
+    on_copy_movement: RefCell<Option<Box<dyn Fn(Movement)>>>,
 }
 
 pub type ApplyFn = Rc<dyn Fn(Cmd)>;
@@ -51,6 +56,10 @@ impl Editor {
             column,
             indicator: dnd::new_drop_indicator(),
             drag_active: Rc::new(Cell::new(false)),
+            selected: Rc::new(RefCell::new(HashSet::new())),
+            last_selected: Rc::new(RefCell::new(None)),
+            active_tag_filter: Rc::new(RefCell::new(None)),
+            on_copy_movement: RefCell::new(None),
         })
     }
 
@@ -78,6 +87,121 @@ impl Editor {
         find_by_name(self.column.upcast_ref(), &target)
             .map(|w| w.grab_focus())
             .unwrap_or(false)
+    }
+
+    /// Ctrl/Shift-click on an idea's number (see `idea_row.rs`). Shift
+    /// extends a range from the last-clicked idea, but only within the same
+    /// movement — selection never spans movements, so a cross-movement
+    /// shift-click just falls through to a plain single-select instead.
+    fn toggle_select(self: &Rc<Self>, state: &Rc<RefCell<AppState>>, id: &str, ctrl: bool, shift: bool) {
+        let movement_ids = {
+            let st = state.borrow();
+            let Some((m_idx, _)) = st.sermon.find_idea(id) else {
+                return;
+            };
+            st.sermon.movements[m_idx]
+                .ideas
+                .iter()
+                .map(|i| i.id.clone())
+                .collect::<Vec<_>>()
+        };
+        let anchor = self.last_selected.borrow().clone();
+        let anchor_same_movement = anchor.as_ref().is_some_and(|a| movement_ids.contains(a));
+
+        let mut selected = self.selected.borrow_mut();
+        if shift && anchor_same_movement {
+            let anchor = anchor.unwrap();
+            let a_idx = movement_ids.iter().position(|x| x == &anchor).unwrap();
+            let b_idx = movement_ids.iter().position(|x| x == id).unwrap();
+            let (lo, hi) = if a_idx <= b_idx { (a_idx, b_idx) } else { (b_idx, a_idx) };
+            if !ctrl {
+                selected.clear();
+            }
+            selected.extend(movement_ids[lo..=hi].iter().cloned());
+        } else if ctrl {
+            if !selected.remove(id) {
+                selected.insert(id.to_string());
+            }
+            *self.last_selected.borrow_mut() = Some(id.to_string());
+        } else {
+            selected.clear();
+            selected.insert(id.to_string());
+            *self.last_selected.borrow_mut() = Some(id.to_string());
+        }
+        drop(selected);
+        self.refresh_selection_classes();
+    }
+
+    /// Stores the "Copy movement to another sermon…" handler (see
+    /// `app_window.rs`, which owns the sermons directory, the current
+    /// sermon's path, and the toast overlay this needs — none of which
+    /// `Editor` itself holds). Call once, mirroring `init_dnd`/`init_keys`.
+    pub fn set_on_copy_movement(&self, f: impl Fn(Movement) + 'static) {
+        *self.on_copy_movement.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Ctrl+click on an idea/part tag chip (see `idea_row.rs`). Dims every
+    /// idea not carrying that exact tag value, toggling off on a second
+    /// click of the same tag. Implemented as a plain `rebuild()` rather than
+    /// a live widget-tree walk: unlike `.idea-row-selected`, which walks the
+    /// live tree because it fires on every marquee-drag frame, this fires at
+    /// most once per click, so the simplicity of reusing `rebuild()`'s
+    /// existing dimming pass (see the idea-row-creation loop) outweighs the
+    /// cost of a full rebuild.
+    fn toggle_tag_filter(self: &Rc<Self>, state: &Rc<RefCell<AppState>>, apply: &ApplyFn, tag: String) {
+        {
+            let mut filter = self.active_tag_filter.borrow_mut();
+            if filter.as_deref() == Some(tag.as_str()) {
+                *filter = None;
+            } else {
+                *filter = Some(tag);
+            }
+        }
+        self.rebuild(state, apply.clone());
+    }
+
+    /// Result of a rubber-band drag in one movement's ideas box (see
+    /// `movement_card.rs`). `additive` (Ctrl held at drag-end) merges into
+    /// the existing selection instead of replacing it — an empty, non-
+    /// additive `ids` (a drag or click that landed on nothing) clears the
+    /// selection, matching the file-manager convention of blank-space click
+    /// deselecting everything.
+    fn apply_marquee_selection(self: &Rc<Self>, ids: Vec<String>, additive: bool) {
+        let mut selected = self.selected.borrow_mut();
+        if !additive {
+            selected.clear();
+        }
+        selected.extend(ids.iter().cloned());
+        drop(selected);
+        *self.last_selected.borrow_mut() = ids.last().cloned();
+        self.refresh_selection_classes();
+    }
+
+    /// Re-applies `.idea-row-selected` to the live widget tree from
+    /// `self.selected` without a full `rebuild()` — selection is ephemeral
+    /// UI state, not a `Cmd`, so no undo entry or model change is involved.
+    fn refresh_selection_classes(self: &Rc<Self>) {
+        let selected = self.selected.borrow();
+        fn walk(w: &gtk4::Widget, selected: &HashSet<String>) {
+            if w.css_classes().iter().any(|c| c == "idea-row") {
+                let is_selected = w
+                    .widget_name()
+                    .strip_prefix("idea:")
+                    .map(|id| selected.contains(id))
+                    .unwrap_or(false);
+                if is_selected {
+                    w.add_css_class("idea-row-selected");
+                } else {
+                    w.remove_css_class("idea-row-selected");
+                }
+            }
+            let mut child = w.first_child();
+            while let Some(c) = child {
+                walk(&c, selected);
+                child = c.next_sibling();
+            }
+        }
+        walk(self.column.upcast_ref(), &selected);
     }
 
     /// Wires the movements column's single `DropTarget`. Call once, after
@@ -117,6 +241,53 @@ impl Editor {
         self.column.add_controller(target);
     }
 
+    /// Wires Delete/BackSpace to bulk-delete the current selection. Call
+    /// once, same reasoning as `init_dnd`. Deliberately *not* capture-phase:
+    /// if a focused `Entry`/`TextView` is what actually has focus, this
+    /// explicitly steps aside so normal in-field text deletion is
+    /// untouched — the guard checks focus directly rather than racing
+    /// against it.
+    pub fn init_keys(self: &Rc<Self>, state: &Rc<RefCell<AppState>>, apply: ApplyFn) {
+        let editor = self.clone();
+        let state = state.clone();
+        let key_ctl = gtk4::EventControllerKey::new();
+        key_ctl.connect_key_pressed(move |_, key, _, _| {
+            if !matches!(key, gtk4::gdk::Key::Delete | gtk4::gdk::Key::BackSpace) {
+                return glib::Propagation::Proceed;
+            }
+            if editor.selected.borrow().is_empty() {
+                return glib::Propagation::Proceed;
+            }
+            if let Some(root) = editor.column.root() {
+                if let Some(focus) = gtk4::prelude::RootExt::focus(&root) {
+                    if focus.downcast_ref::<gtk4::Entry>().is_some()
+                        || focus.downcast_ref::<gtk4::TextView>().is_some()
+                    {
+                        return glib::Propagation::Proceed;
+                    }
+                }
+            }
+            editor.delete_selected(&state, &apply);
+            glib::Propagation::Stop
+        });
+        self.scroller.add_controller(key_ctl);
+    }
+
+    /// Bulk-deletes the current selection and clears it (the ids no longer
+    /// resolve to anything after this). Shared by the Delete/BackSpace key
+    /// handler and the right-click "Delete N ideas" menu item.
+    fn delete_selected(self: &Rc<Self>, state: &Rc<RefCell<AppState>>, apply: &ApplyFn) {
+        let cmd = {
+            let st = state.borrow();
+            bulk_delete_cmd(&st.sermon, &self.selected.borrow())
+        };
+        if let Some(cmd) = cmd {
+            apply(cmd);
+        }
+        self.selected.borrow_mut().clear();
+        *self.last_selected.borrow_mut() = None;
+    }
+
     fn on_motion(self: &Rc<Self>, payload: &str, y: f64) {
         // `y` arrives in `self.column`'s own coordinate space (the widget
         // the `DropTarget` is attached to), which grows far taller than the
@@ -133,7 +304,7 @@ impl Editor {
             .map(|(_, ty)| ty)
             .unwrap_or(y);
         dnd::autoscroll_if_near_edge(&self.scroller, scroller_y);
-        if payload.starts_with(dnd::IDEA_PAYLOAD_PREFIX) {
+        if payload.starts_with(dnd::IDEA_PAYLOAD_PREFIX) || payload.starts_with(dnd::IDEAS_PAYLOAD_PREFIX) {
             match dnd::locate_drop_zone(&self.column, y) {
                 DropZone::InMovementIdeas { movement_index, local_y } => {
                     dnd::place_idea_indicator(&self.indicator, &self.column, movement_index, local_y);
@@ -146,7 +317,72 @@ impl Editor {
     }
 
     fn on_drop(self: &Rc<Self>, state: &Rc<RefCell<AppState>>, apply: &ApplyFn, payload: &str, y: f64) -> bool {
-        if let Some(idea_id) = payload.strip_prefix(dnd::IDEA_PAYLOAD_PREFIX) {
+        if let Some(ids_csv) = payload.strip_prefix(dnd::IDEAS_PAYLOAD_PREFIX) {
+            // Selection is always scoped to one movement (see
+            // `toggle_select`/`apply_marquee_selection`), so every id here
+            // shares the same source movement — `positions` below is never
+            // a mix of movements. Sorted ascending by original index so the
+            // `orig_i - k` trick (same one `MoveIdea`'s single-item drop
+            // uses via `adjusted`/`insertion_index - 1` above) generalizes:
+            // removing the k-th-lowest idea from a movement shifts every
+            // idea after it down by one, so the k-th removal's *live*
+            // source index is its original index minus the k removals
+            // already done ahead of it.
+            let mut positions: Vec<(usize, usize)> = {
+                let st = state.borrow();
+                ids_csv
+                    .split(',')
+                    .filter_map(|id| st.sermon.find_idea(id))
+                    .collect()
+            };
+            if positions.is_empty() {
+                return false;
+            }
+            positions.sort();
+            let src_m = positions[0].0;
+            let idxs: Vec<usize> = positions.iter().map(|(_, i)| *i).collect();
+
+            match dnd::locate_drop_zone(&self.column, y) {
+                DropZone::InMovementIdeas { movement_index, local_y } => {
+                    let Some(card) = dnd::nth_movement_card(&self.column, movement_index) else {
+                        return false;
+                    };
+                    let Some(ideas_box) = dnd::movement_ideas_box(&card) else {
+                        return false;
+                    };
+                    let insertion_index = dnd::idea_insertion_index(&ideas_box, local_y);
+                    let base = if movement_index == src_m {
+                        let removed_before = idxs.iter().filter(|&&i| i < insertion_index).count();
+                        insertion_index.saturating_sub(removed_before)
+                    } else {
+                        insertion_index
+                    };
+                    let cmds = idxs
+                        .iter()
+                        .enumerate()
+                        .map(|(k, orig_i)| Cmd::MoveIdea {
+                            from: (src_m, orig_i - k),
+                            to: (movement_index, base + k),
+                        })
+                        .collect();
+                    apply(Cmd::Composite(cmds));
+                }
+                DropZone::BlankSpace { insert_index } => {
+                    let new_movement = Movement::new(insert_index);
+                    let adjusted_src_m = if src_m >= insert_index { src_m + 1 } else { src_m };
+                    let mut cmds = vec![Cmd::InsertMovement {
+                        at: insert_index,
+                        movement: new_movement,
+                    }];
+                    cmds.extend(idxs.iter().enumerate().map(|(k, orig_i)| Cmd::MoveIdea {
+                        from: (adjusted_src_m, orig_i - k),
+                        to: (insert_index, k),
+                    }));
+                    apply(Cmd::Composite(cmds));
+                }
+            }
+            true
+        } else if let Some(idea_id) = payload.strip_prefix(dnd::IDEA_PAYLOAD_PREFIX) {
             let Some((from_m, from_i)) = state.borrow().sermon.find_idea(idea_id) else {
                 return false;
             };
@@ -230,6 +466,13 @@ impl Editor {
             self.column.remove(&child);
         }
 
+        {
+            // Ideas deleted by other structural commands (or by this
+            // rebuild's own caller) shouldn't linger as ghost selection.
+            let sermon = &state.borrow().sermon;
+            self.selected.borrow_mut().retain(|id| sermon.idea(id).is_some());
+        }
+
         let numbering = state.borrow().sermon.numbering();
         let total_ideas: usize = numbering.len();
         let movements: Vec<Movement> = state.borrow().sermon.movements.clone();
@@ -248,6 +491,7 @@ impl Editor {
         for (m_idx, movement) in movements.iter().enumerate() {
             let card = build_movement_card(
                 movement,
+                m_idx == 0,
                 &self.drag_active,
                 {
                     let id = movement.id.clone();
@@ -307,18 +551,109 @@ impl Editor {
                     let id = movement.id.clone();
                     let state = state.clone();
                     let apply = apply.clone();
+                    move || {
+                        let Some(idx) = state.borrow().sermon.find_movement(&id) else {
+                            return;
+                        };
+                        if idx == 0 {
+                            return;
+                        }
+                        let this_movement = state.borrow().sermon.movements[idx].clone();
+                        let prev_len = state.borrow().sermon.movements[idx - 1].ideas.len();
+                        let mut cmds: Vec<Cmd> = (0..this_movement.ideas.len())
+                            .map(|offset| Cmd::MoveIdea {
+                                from: (idx, 0),
+                                to: (idx - 1, prev_len + offset),
+                            })
+                            .collect();
+                        cmds.push(Cmd::DeleteMovement {
+                            at: idx,
+                            movement: Movement {
+                                ideas: Vec::new(),
+                                ..this_movement
+                            },
+                        });
+                        apply(Cmd::Composite(cmds));
+                    }
+                },
+                {
+                    let id = movement.id.clone();
+                    let state = state.clone();
+                    let apply = apply.clone();
                     let editor = self.clone();
                     move |dir: i32| {
                         let Some(from) = state.borrow().sermon.find_movement(&id) else {
                             return;
                         };
                         let len = state.borrow().sermon.movements.len();
-                        let to = from as i32 + dir;
-                        if to < 0 || to as usize >= len {
+                        let to = match dir {
+                            i32::MIN => 0,
+                            i32::MAX => len - 1,
+                            dir => {
+                                let t = from as i32 + dir;
+                                if t < 0 || t as usize >= len {
+                                    return;
+                                }
+                                t as usize
+                            }
+                        };
+                        apply(Cmd::MoveMovement { from, to });
+                        editor.focus_by_name(&format!("movement:{id}"));
+                    }
+                },
+                {
+                    let id = movement.id.clone();
+                    let state = state.clone();
+                    let apply = apply.clone();
+                    move |split_at: usize| {
+                        let Some(m_idx) = state.borrow().sermon.find_movement(&id) else {
+                            return;
+                        };
+                        let ideas_len = state.borrow().sermon.movements[m_idx].ideas.len();
+                        if split_at >= ideas_len {
                             return;
                         }
-                        apply(Cmd::MoveMovement { from, to: to as usize });
-                        editor.focus_by_name(&format!("movement:{id}"));
+                        let new_movement = Movement::new(m_idx + 1);
+                        let mut cmds = vec![Cmd::InsertMovement {
+                            at: m_idx + 1,
+                            movement: new_movement,
+                        }];
+                        for offset in 0..(ideas_len - split_at) {
+                            cmds.push(Cmd::MoveIdea {
+                                from: (m_idx, split_at),
+                                to: (m_idx + 1, offset),
+                            });
+                        }
+                        apply(Cmd::Composite(cmds));
+                    }
+                },
+                {
+                    let editor = self.clone();
+                    move |ids: Vec<String>, additive: bool| {
+                        editor.apply_marquee_selection(ids, additive);
+                    }
+                },
+                self.selected.clone(),
+                {
+                    let editor = self.clone();
+                    let state = state.clone();
+                    let apply = apply.clone();
+                    move || {
+                        editor.delete_selected(&state, &apply);
+                    }
+                },
+                {
+                    let id = movement.id.clone();
+                    let state = state.clone();
+                    let editor = self.clone();
+                    move || {
+                        let Some(idx) = state.borrow().sermon.find_movement(&id) else {
+                            return;
+                        };
+                        let movement = state.borrow().sermon.movements[idx].clone();
+                        if let Some(f) = editor.on_copy_movement.borrow().as_ref() {
+                            f(movement);
+                        }
                     }
                 },
             );
@@ -477,26 +812,86 @@ impl Editor {
                                 return;
                             };
                             let len = state.borrow().sermon.movements[m].ideas.len();
-                            let to = i as i32 + dir;
-                            if to < 0 || to as usize >= len {
-                                return;
-                            }
-                            apply(Cmd::MoveIdea {
-                                from: (m, i),
-                                to: (m, to as usize),
-                            });
+                            let to = match dir {
+                                i32::MIN => 0,
+                                i32::MAX => len - 1,
+                                dir => {
+                                    let t = i as i32 + dir;
+                                    if t < 0 || t as usize >= len {
+                                        return;
+                                    }
+                                    t as usize
+                                }
+                            };
+                            apply(Cmd::MoveIdea { from: (m, i), to: (m, to) });
                             editor.focus_by_name(&format!("idea:{id}"));
+                        }
+                    },
+                    {
+                        let id = id.clone();
+                        let state = state.clone();
+                        let editor = self.clone();
+                        move |ctrl: bool, shift: bool| {
+                            editor.toggle_select(&state, &id, ctrl, shift);
+                        }
+                    },
+                    {
+                        let state = state.clone();
+                        let apply = apply.clone();
+                        let editor = self.clone();
+                        move |tag: String| {
+                            editor.toggle_tag_filter(&state, &apply, tag);
+                        }
+                    },
+                    {
+                        let state = state.clone();
+                        let apply = apply.clone();
+                        move |old: String, new: String| {
+                            rename_tag_everywhere(&state, &apply, TagKind::Idea, old, new);
+                        }
+                    },
+                    {
+                        let state = state.clone();
+                        let apply = apply.clone();
+                        move |old: String, new: String| {
+                            rename_tag_everywhere(&state, &apply, TagKind::Part, old, new);
                         }
                     },
                 );
                 dnd::setup_drag_source(
                     &row.grabber,
                     &row.root,
-                    format!("{}{}", dnd::IDEA_PAYLOAD_PREFIX, id),
+                    {
+                        // Dragging a row that's part of a live multi-selection
+                        // (>1 member) carries the whole selection; dragging an
+                        // unselected row (even while others are selected)
+                        // moves just that one, unaffected. Checked fresh at
+                        // drag-start, not baked in at row-build time, so this
+                        // stays correct across selection changes that don't
+                        // trigger a rebuild (ctrl/shift-click, marquee).
+                        let id = id.clone();
+                        let selected = self.selected.clone();
+                        move || {
+                            let sel = selected.borrow();
+                            if sel.len() > 1 && sel.contains(&id) {
+                                format!("{}{}", dnd::IDEAS_PAYLOAD_PREFIX, sel.iter().cloned().collect::<Vec<_>>().join(","))
+                            } else {
+                                format!("{}{}", dnd::IDEA_PAYLOAD_PREFIX, id)
+                            }
+                        }
+                    },
                     &self.drag_active,
                 );
                 row.root.set_widget_name(&format!("idea:{id}"));
                 row.entry.set_widget_name(&format!("idea-entry:{id}"));
+                if self.selected.borrow().contains(&id) {
+                    row.root.add_css_class("idea-row-selected");
+                }
+                if let Some(filter) = &*self.active_tag_filter.borrow() {
+                    if idea.idea_tag != *filter && idea.part_tag != *filter {
+                        row.root.add_css_class("idea-row-tag-dimmed");
+                    }
+                }
                 card.ideas_box.append(&row.root);
             }
 
@@ -540,12 +935,13 @@ impl Editor {
         {
             let state = state.clone();
             let apply = apply.clone();
+            let editor = self.clone();
             add_movement_btn.connect_clicked(move |_| {
                 let at = state.borrow().sermon.movements.len();
-                apply(Cmd::InsertMovement {
-                    at,
-                    movement: Movement::new(at),
-                });
+                let movement = Movement::new(at);
+                let new_id = movement.id.clone();
+                apply(Cmd::InsertMovement { at, movement });
+                editor.focus_by_name(&format!("movement:{new_id}"));
             });
         }
         self.column.append(&add_movement_btn);
@@ -577,4 +973,58 @@ fn find_by_name(root: &gtk4::Widget, name: &str) -> Option<gtk4::Widget> {
         child = c.next_sibling();
     }
     None
+}
+
+/// "Rename everywhere" from a tag popover (see `tag_popover.rs`): every
+/// idea in the sermon whose tag of this `kind` currently equals `old` gets
+/// set to `new` in one undo step.
+fn rename_tag_everywhere(state: &Rc<RefCell<AppState>>, apply: &ApplyFn, kind: TagKind, old: String, new: String) {
+    if old.is_empty() || old == new {
+        return;
+    }
+    let cmds: Vec<Cmd> = {
+        let st = state.borrow();
+        st.sermon
+            .movements
+            .iter()
+            .flat_map(|m| m.ideas.iter())
+            .filter(|idea| match kind {
+                TagKind::Idea => idea.idea_tag == old,
+                TagKind::Part => idea.part_tag == old,
+            })
+            .map(|idea| Cmd::SetIdeaTag {
+                id: idea.id.clone(),
+                kind,
+                old: old.clone(),
+                new: new.clone(),
+            })
+            .collect()
+    };
+    if !cmds.is_empty() {
+        apply(Cmd::Composite(cmds));
+    }
+}
+
+/// Builds one `Cmd::Composite(DeleteIdea...)` for every id in `ids` that
+/// still resolves to a real idea. Sorted descending by `(movement, index)`
+/// so within any one movement the highest index is removed first — each
+/// removal only ever shifts *later* indices in that movement, never the
+/// ones still queued, so no index-adjustment bookkeeping is needed the way
+/// `on_drop`'s multi-idea move requires.
+fn bulk_delete_cmd(sermon: &Sermon, ids: &HashSet<String>) -> Option<Cmd> {
+    let mut positions: Vec<(usize, usize)> = ids.iter().filter_map(|id| sermon.find_idea(id)).collect();
+    if positions.is_empty() {
+        return None;
+    }
+    positions.sort_by(|a, b| b.cmp(a));
+    Some(Cmd::Composite(
+        positions
+            .into_iter()
+            .map(|(m, i)| Cmd::DeleteIdea {
+                movement: m,
+                index: i,
+                idea: sermon.movements[m].ideas[i].clone(),
+            })
+            .collect(),
+    ))
 }

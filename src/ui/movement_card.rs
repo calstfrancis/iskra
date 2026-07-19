@@ -4,7 +4,8 @@
 //! `ui::dnd::movement_ideas_box`) so `dnd.rs` can locate it purely from the
 //! widget tree without a second parallel bookkeeping structure.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -23,13 +24,20 @@ pub struct MovementCardWidgets {
 #[allow(clippy::too_many_arguments)]
 pub fn build_movement_card(
     movement: &Movement,
+    is_first: bool,
     drag_active: &Rc<Cell<bool>>,
     on_rename: impl Fn(String) + 'static,
     on_rename_focus_out: impl Fn() + 'static,
     on_toggle_collapse: impl Fn() + 'static,
     on_delete: impl Fn() + 'static,
     on_duplicate: impl Fn() + 'static,
+    on_merge_up: impl Fn() + 'static,
     on_move: impl Fn(i32) + 'static,
+    on_split: impl Fn(usize) + 'static,
+    on_marquee_select: impl Fn(Vec<String>, bool) + 'static,
+    selected: Rc<RefCell<HashSet<String>>>,
+    on_delete_selected: impl Fn() + 'static,
+    on_copy_to_sermon: impl Fn() + 'static,
 ) -> MovementCardWidgets {
     let root = GtkBox::new(Orientation::Vertical, 2);
     root.add_css_class("movement-card");
@@ -66,6 +74,19 @@ pub fn build_movement_card(
     duplicate_btn.set_tooltip_text(Some("Duplicate movement"));
     header.append(&duplicate_btn);
 
+    let merge_up_btn = Button::from_icon_name("go-up-symbolic");
+    merge_up_btn.add_css_class("flat");
+    merge_up_btn.add_css_class("movement-header-icon");
+    merge_up_btn.set_tooltip_text(Some("Merge with movement above"));
+    merge_up_btn.set_sensitive(!is_first);
+    header.append(&merge_up_btn);
+
+    let copy_to_btn = Button::from_icon_name("send-to-symbolic");
+    copy_to_btn.add_css_class("flat");
+    copy_to_btn.add_css_class("movement-header-icon");
+    copy_to_btn.set_tooltip_text(Some("Copy movement to another sermon…"));
+    header.append(&copy_to_btn);
+
     let delete_btn = Button::from_icon_name("user-trash-symbolic");
     delete_btn.add_css_class("flat");
     delete_btn.add_css_class("idea-delete");
@@ -91,6 +112,134 @@ pub fn build_movement_card(
     revealer.set_reveal_child(!movement.collapsed);
     root.append(&revealer);
 
+    {
+        // Right-click on blank space in the ideas box (idea rows/buttons/
+        // entries claim button-3 for their own handling — an `Entry`'s
+        // built-in context menu, in particular — so this only ever fires
+        // over the gaps between rows, never on a pill itself).
+        let idea_count = movement.ideas.len();
+        let ideas_box_for_gesture = ideas_box.clone();
+        let on_split: Rc<dyn Fn(usize)> = Rc::new(on_split);
+        let on_delete_selected: Rc<dyn Fn()> = Rc::new(on_delete_selected);
+        let click = gtk4::GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_SECONDARY);
+        click.connect_pressed(move |gesture, _n_press, x, y| {
+            let selected_count = selected.borrow().len();
+            if idea_count == 0 && selected_count == 0 {
+                return;
+            }
+            gesture.set_state(gtk4::EventSequenceState::Claimed);
+            let split_at = dnd::idea_insertion_index(&ideas_box_for_gesture, y);
+
+            let popover = gtk4::Popover::new();
+            popover.set_parent(&ideas_box_for_gesture);
+            popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            popover.set_autohide(true);
+
+            let menu = GtkBox::new(Orientation::Vertical, 0);
+            if idea_count > 0 {
+                let split_btn = Button::with_label("Split movement here");
+                split_btn.add_css_class("flat");
+                {
+                    let popover_for_close = popover.clone();
+                    let on_split = on_split.clone();
+                    split_btn.connect_clicked(move |_| {
+                        on_split(split_at);
+                        popover_for_close.popdown();
+                    });
+                }
+                menu.append(&split_btn);
+            }
+            if selected_count > 0 {
+                let delete_btn = Button::with_label(&format!("Delete {selected_count} idea(s)"));
+                delete_btn.add_css_class("flat");
+                {
+                    let popover_for_close = popover.clone();
+                    let on_delete_selected = on_delete_selected.clone();
+                    delete_btn.connect_clicked(move |_| {
+                        on_delete_selected();
+                        popover_for_close.popdown();
+                    });
+                }
+                menu.append(&delete_btn);
+            }
+            popover.set_child(Some(&menu));
+            {
+                let popover_for_closed = popover.clone();
+                popover.connect_closed(move |_| popover_for_closed.unparent());
+            }
+            popover.popup();
+        });
+        ideas_box.add_controller(click);
+    }
+
+    {
+        // Rubber-band select: drag on blank space in the ideas box (same
+        // "child widgets claim their own clicks first" reasoning as the
+        // right-click handler above — Entry/buttons/chips consume a primary
+        // drag over themselves, e.g. Entry's own text-selection drag, so
+        // this only ever starts from the gaps between/around rows). Below a
+        // small movement threshold nothing is claimed or highlighted, so an
+        // accidental micro-drag on blank space still behaves like a plain
+        // click.
+        let ideas_box_for_drag = ideas_box.clone();
+        let start = Rc::new(Cell::new((0.0f64, 0.0f64)));
+        let drag = gtk4::GestureDrag::new();
+        drag.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        {
+            let start = start.clone();
+            drag.connect_drag_begin(move |_, x, y| start.set((x, y)));
+        }
+        {
+            let start = start.clone();
+            let ideas_box_for_drag = ideas_box_for_drag.clone();
+            drag.connect_drag_update(move |gesture, dx, dy| {
+                if dx * dx + dy * dy < 16.0 {
+                    return;
+                }
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+                let (sx, sy) = start.get();
+                let (x0, x1) = (sx.min(sx + dx), sx.max(sx + dx));
+                let (y0, y1) = (sy.min(sy + dy), sy.max(sy + dy));
+                let mut child = ideas_box_for_drag.first_child();
+                while let Some(w) = child {
+                    if w.css_classes().iter().any(|c| c == "idea-row") {
+                        let alloc = w.allocation();
+                        let intersects = (alloc.x() as f64) < x1
+                            && (alloc.x() as f64 + alloc.width() as f64) > x0
+                            && (alloc.y() as f64) < y1
+                            && (alloc.y() as f64 + alloc.height() as f64) > y0;
+                        if intersects {
+                            w.add_css_class("idea-row-selected");
+                        } else {
+                            w.remove_css_class("idea-row-selected");
+                        }
+                    }
+                    child = w.next_sibling();
+                }
+            });
+        }
+        {
+            let ideas_box_for_drag = ideas_box_for_drag.clone();
+            drag.connect_drag_end(move |gesture, _dx, _dy| {
+                let mods = gesture.current_event_state();
+                let ctrl = mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+                let mut ids = Vec::new();
+                let mut child = ideas_box_for_drag.first_child();
+                while let Some(w) = child {
+                    if w.css_classes().iter().any(|c| c == "idea-row-selected") {
+                        if let Some(id) = w.widget_name().strip_prefix("idea:") {
+                            ids.push(id.to_string());
+                        }
+                    }
+                    child = w.next_sibling();
+                }
+                on_marquee_select(ids, ctrl);
+            });
+        }
+        ideas_box.add_controller(drag);
+    }
+
     name_entry.connect_changed(move |e| on_rename(e.text().to_string()));
     {
         let focus_ctl = gtk4::EventControllerFocus::new();
@@ -100,18 +249,21 @@ pub fn build_movement_card(
     {
         // Alt+Up/Alt+Down reorders this movement — a keyboard alternative
         // to dragging the grabber, which is fiddlier to land precisely.
+        // Alt+Shift+Up/Down jumps straight to the top/bottom (see
+        // `idea_row.rs`'s identical sentinel convention for `on_move`).
         let key_ctl = gtk4::EventControllerKey::new();
         key_ctl.connect_key_pressed(move |_, key, _, modifiers| {
             if !modifiers.contains(gtk4::gdk::ModifierType::ALT_MASK) {
                 return glib::Propagation::Proceed;
             }
+            let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
             match key {
                 gtk4::gdk::Key::Up => {
-                    on_move(-1);
+                    on_move(if shift { i32::MIN } else { -1 });
                     glib::Propagation::Stop
                 }
                 gtk4::gdk::Key::Down => {
-                    on_move(1);
+                    on_move(if shift { i32::MAX } else { 1 });
                     glib::Propagation::Stop
                 }
                 _ => glib::Propagation::Proceed,
@@ -128,9 +280,11 @@ pub fn build_movement_card(
     collapse_btn.connect_toggled(move |_| on_toggle_collapse());
     duplicate_btn.connect_clicked(move |_| on_duplicate());
     delete_btn.connect_clicked(move |_| on_delete());
+    merge_up_btn.connect_clicked(move |_| on_merge_up());
+    copy_to_btn.connect_clicked(move |_| on_copy_to_sermon());
 
     let payload = format!("{}{}", dnd::MOVEMENT_PAYLOAD_PREFIX, movement.id);
-    dnd::setup_drag_source(&grabber, &root, payload, drag_active);
+    dnd::setup_drag_source(&grabber, &root, move || payload.clone(), drag_active);
 
     MovementCardWidgets {
         root,
