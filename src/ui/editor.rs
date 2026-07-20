@@ -178,6 +178,14 @@ impl Editor {
         self.refresh_selection_classes();
     }
 
+    /// Drops the whole selection. Shared by Escape and the blank-space
+    /// click on the movements column.
+    fn clear_selection(self: &Rc<Self>) {
+        self.selected.borrow_mut().clear();
+        *self.last_selected.borrow_mut() = None;
+        self.refresh_selection_classes();
+    }
+
     /// Re-applies `.idea-row-selected` to the live widget tree from
     /// `self.selected` without a full `rebuild()` — selection is ephemeral
     /// UI state, not a `Cmd`, so no undo entry or model change is involved.
@@ -253,6 +261,17 @@ impl Editor {
         let state = state.clone();
         let key_ctl = gtk4::EventControllerKey::new();
         key_ctl.connect_key_pressed(move |_, key, _, _| {
+            // Escape clears the selection from anywhere in the editor —
+            // previously the only way to deselect was to click blank space
+            // *inside the same ideas box*, which is undiscoverable and
+            // impossible for a movement whose rows fill it edge to edge.
+            if key == gtk4::gdk::Key::Escape {
+                if editor.selected.borrow().is_empty() {
+                    return glib::Propagation::Proceed;
+                }
+                editor.clear_selection();
+                return glib::Propagation::Stop;
+            }
             if !matches!(key, gtk4::gdk::Key::Delete | gtk4::gdk::Key::BackSpace) {
                 return glib::Propagation::Proceed;
             }
@@ -272,6 +291,28 @@ impl Editor {
             glib::Propagation::Stop
         });
         self.scroller.add_controller(key_ctl);
+
+        // Clicking the empty column around/below the movement cards clears
+        // the selection, the file-manager convention. Guarded by `pick` so
+        // it only fires on genuinely blank column space and never swallows
+        // a click that landed on a card.
+        let editor = self.clone();
+        let click = gtk4::GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        let column = self.column.clone();
+        click.connect_pressed(move |_, _, x, y| {
+            if editor.selected.borrow().is_empty() {
+                return;
+            }
+            let hit_blank = match column.pick(x, y, gtk4::PickFlags::DEFAULT) {
+                Some(w) => w == column.clone().upcast::<gtk4::Widget>(),
+                None => true,
+            };
+            if hit_blank {
+                editor.clear_selection();
+            }
+        });
+        self.column.add_controller(click);
     }
 
     /// Bulk-deletes the current selection and clears it (the ids no longer

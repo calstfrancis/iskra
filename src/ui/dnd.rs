@@ -242,6 +242,16 @@ pub fn setup_drag_source(
 ) {
     let source = DragSource::new();
     source.set_actions(gtk4::gdk::DragAction::MOVE);
+    // Capture phase, not the default bubble: the ideas box's rubber-band
+    // `GestureDrag` is an *ancestor* bubble-phase gesture that claims the
+    // sequence at its own small movement threshold, while a `DragSource`
+    // can't claim until GTK's (larger) system drag threshold is crossed.
+    // In bubble phase the marquee therefore won the race on most drags and
+    // cancelled this source mid-gesture — grabbing the handle rubber-band-
+    // selected rows instead of starting a drag. Capture runs root→target
+    // before any bubble handler, so the handle always wins on its own
+    // pixels regardless of the two thresholds.
+    source.set_propagation_phase(gtk4::PropagationPhase::Capture);
     source.connect_prepare(move |_, _, _| {
         Some(ContentProvider::for_value(&Value::from(&DragPayload(payload()))))
     });
@@ -250,24 +260,37 @@ pub fn setup_drag_source(
     {
         let preview = preview.clone();
         let drag_active = drag_active.clone();
+        let handle = grabber.clone().upcast::<gtk4::Widget>();
         source.connect_drag_begin(move |src, _drag| {
             drag_active.set(true);
             preview.add_css_class("dragging");
+            handle.set_cursor_from_name(Some("grabbing"));
             let paintable = WidgetPaintable::new(Some(&preview));
-            src.set_icon(Some(&paintable), 0, 0);
+            // Anchor the drag icon under the pointer rather than at its
+            // top-left corner: with (0,0) the row preview hung down-right of
+            // the cursor, so the pointer sat outside the thing being dragged
+            // and the drop indicator never lined up with where the row
+            // visually was.
+            let width = preview.width().max(1);
+            let height = preview.height().max(1);
+            src.set_icon(Some(&paintable), (width / 2).min(120), height / 2);
         });
     }
     {
         let preview = preview.clone();
         let drag_active = drag_active.clone();
+        let handle = grabber.clone().upcast::<gtk4::Widget>();
         source.connect_drag_end(move |_, _, _| {
             drag_active.set(false);
             preview.remove_css_class("dragging");
+            handle.set_cursor_from_name(Some("grab"));
         });
     }
     {
         let drag_active = drag_active.clone();
+        let handle = grabber.clone().upcast::<gtk4::Widget>();
         source.connect_drag_cancel(move |_, _, _| {
+            handle.set_cursor_from_name(Some("grab"));
             // Esc or a rejected drop: same cleanup as a normal drag_end. The
             // class actually clears on button-release, not on Esc itself —
             // the drag is tied to the pointer grab, confirmed correct GTK4
@@ -284,5 +307,11 @@ pub fn drag_grabber(tooltip: &str) -> Image {
     let grabber = Image::from_icon_name("list-drag-handle-symbolic");
     grabber.add_css_class("idea-grabber");
     grabber.set_tooltip_text(Some(tooltip));
+    grabber.set_cursor_from_name(Some("grab"));
+    // The icon stays 16px, but the widget claims the row's full height so
+    // the pressable area is a comfortable vertical band instead of a
+    // 16px-tall sliver the pointer has to be aimed at.
+    grabber.set_valign(gtk4::Align::Fill);
+    grabber.set_vexpand(false);
     grabber
 }

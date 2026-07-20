@@ -191,27 +191,52 @@ pub fn build_movement_card(
     }
 
     {
-        // Rubber-band select: drag on blank space in the ideas box (same
-        // "child widgets claim their own clicks first" reasoning as the
-        // right-click handler above — Entry/buttons/chips consume a primary
-        // drag over themselves, e.g. Entry's own text-selection drag, so
-        // this only ever starts from the gaps between/around rows). Below a
-        // small movement threshold nothing is claimed or highlighted, so an
-        // accidental micro-drag on blank space still behaves like a plain
-        // click.
+        // Rubber-band select: drag on blank space in the ideas box. The
+        // press point is resolved with `pick()` and the gesture denied
+        // outright unless it landed on the ideas box itself — the earlier
+        // version relied on "child widgets claim their own clicks first,"
+        // which is true of Entry/buttons/chips but *not* of the plain
+        // `Image` drag handle or the `Label` idea number, neither of which
+        // claims anything. A press on the handle therefore also started a
+        // marquee, and since this gesture claimed at 4px while a
+        // `DragSource` can't claim until GTK's larger system drag threshold,
+        // the marquee reliably won and cancelled the drag — grabbing the
+        // handle selected rows instead of moving one. Threshold also raised
+        // above the system drag threshold so the two can never race again.
         let ideas_box_for_drag = ideas_box.clone();
         let start = Rc::new(Cell::new((0.0f64, 0.0f64)));
+        let marquee_armed = Rc::new(Cell::new(false));
         let drag = gtk4::GestureDrag::new();
         drag.set_button(gtk4::gdk::BUTTON_PRIMARY);
         {
             let start = start.clone();
-            drag.connect_drag_begin(move |_, x, y| start.set((x, y)));
+            let marquee_armed = marquee_armed.clone();
+            let ideas_box_for_pick = ideas_box_for_drag.clone();
+            drag.connect_drag_begin(move |gesture, x, y| {
+                let on_blank = match ideas_box_for_pick.pick(x, y, gtk4::PickFlags::DEFAULT) {
+                    Some(w) => {
+                        w == ideas_box_for_pick.clone().upcast::<gtk4::Widget>()
+                            || w.css_classes().iter().any(|c| c == "empty-movement-placeholder")
+                    }
+                    None => true,
+                };
+                marquee_armed.set(on_blank);
+                if !on_blank {
+                    gesture.set_state(gtk4::EventSequenceState::Denied);
+                    return;
+                }
+                start.set((x, y));
+            });
         }
         {
             let start = start.clone();
+            let marquee_armed = marquee_armed.clone();
             let ideas_box_for_drag = ideas_box_for_drag.clone();
             drag.connect_drag_update(move |gesture, dx, dy| {
-                if dx * dx + dy * dy < 16.0 {
+                if !marquee_armed.get() {
+                    return;
+                }
+                if dx * dx + dy * dy < 100.0 {
                     return;
                 }
                 gesture.set_state(gtk4::EventSequenceState::Claimed);
@@ -238,7 +263,12 @@ pub fn build_movement_card(
         }
         {
             let ideas_box_for_drag = ideas_box_for_drag.clone();
+            let marquee_armed = marquee_armed.clone();
             drag.connect_drag_end(move |gesture, _dx, _dy| {
+                if !marquee_armed.get() {
+                    return;
+                }
+                marquee_armed.set(false);
                 let mods = gesture.current_event_state();
                 let ctrl = mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
                 let mut ids = Vec::new();

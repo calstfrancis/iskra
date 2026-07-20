@@ -98,15 +98,11 @@ impl WelcomeWindow {
         } else {
             body.append(&section_label(&format!("What's New in {VERSION}")));
             for item in [
-                "Added: \"New Sermon\" now offers built-in templates (Three-Point Expository, Narrative Arc, Topical) alongside a blank sermon",
-                "Added: Preaching View — a large-print, chrome-free fullscreen display for the pulpit (Ctrl+Shift+P)",
-                "Added: History — browse and restore past committed versions of the open sermon (Ctrl+Shift+H)",
-                "Added: sermons can belong to a named series, grouped and filterable in the library",
-                "Added: quick-pick tag chips show your most-used idea/part tags as one click",
-                "Added: a toast when a scripture tag repeats a past sermon, naming it",
-                "Added: a \"Saved\"/\"Unsaved changes\" indicator in the status bar",
-                "Fixed: dragging an idea onto an existing movement, runaway autoscroll during drag, and focus jumping to the first movement after any edit",
-                "Fixed: several git sync robustness issues, including the very first sync to a brand-new backup remote",
+                "Added: two more lectionaries alongside the RCL — the Roman Catholic Sunday Lectionary and the Narrative Lectionary — plus an RCL Track 2 option, switchable from a picker in the lectionary sidebar",
+                "Added: a \"simple\" toggle in the status bar that hides the lectionary picker unless you need it",
+                "Added: Escape clears the current idea selection, and so does clicking empty space in the movements column",
+                "Fixed: grabbing a drag handle no longer selects rows instead of starting a drag — reordering ideas and movements is much more reliable",
+                "Fixed: drag handles are a larger target with a grab cursor, and the drag preview now sits under the pointer so the drop indicator lines up",
             ] {
                 body.append(&bullet_row(item));
             }

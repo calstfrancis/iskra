@@ -5,11 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.4.0-dev1] — Multiple lectionaries and a sidebar picker
+## [0.4.0-dev2] — Multiple lectionaries, a sidebar picker, and sturdier drag-and-drop
 
 ### Added
 - Two more selectable lectionaries alongside the RCL: the Roman Catholic Sunday Lectionary and the Narrative Lectionary (Luther Seminary's 4-year cycle), plus an RCL Track 2 (Complementary) option for Ordinary Time's OT+Psalm pairing. Switch between them from a picker in the lectionary sidebar.
 - "simple" toggle in the status bar (Simple Mode, on by default): hides the lectionary/track picker for the common case of never switching. Turn it off to reveal the picker.
+- Escape clears the current idea selection, and so does clicking empty space in the movements column.
+
+### Fixed
+- Dragging ideas and movements is far more reliable. Grabbing a drag handle no longer rubber-band-selects rows instead of starting a drag: the marquee gesture was claiming the press before the drag could begin, and it now refuses to start anywhere except genuine blank space in a movement's ideas box.
+- Drag handles are a larger target with a grab cursor and a clearer hover highlight, so they're easier to hit and read as draggable.
+- The drag preview now sits under the pointer instead of hanging below and to the right of it, so the drop indicator lines up with where the row appears to be.
 
 ## [0.3.0] "Kindled Verse" — Scripture citations, printable Preaching View, and movement tools
 

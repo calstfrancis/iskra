@@ -193,20 +193,21 @@ const GLOBAL_CSS: &str = ".paned > separator { \
     .idea-grabber, \
     .movement-grabber { \
         opacity: 0.5; \
-        padding: 5px; \
+        padding: 6px 8px; \
         border-radius: 6px; \
-        min-width: 18px; \
-        min-height: 18px; \
-        transition: opacity 100ms ease; \
+        min-width: 24px; \
+        min-height: 28px; \
+        transition: opacity 100ms ease, background 100ms ease; \
     } \
     .idea-bar:hover .idea-grabber, \
     .movement-card-header:hover .movement-grabber { \
         opacity: 0.85; \
+        background: alpha(@window_fg_color, 0.05); \
     } \
     .idea-grabber:hover, \
     .movement-grabber:hover { \
         opacity: 1.0; \
-        background: alpha(@window_fg_color, 0.08); \
+        background: alpha(@accent_color, 0.18); \
     } \
     .movement-idea-count-badge { \
         background: alpha(@window_fg_color, 0.08); \
