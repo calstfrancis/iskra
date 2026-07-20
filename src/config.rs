@@ -45,6 +45,15 @@ pub struct Config {
     pub print_font_pt: f64,
     #[serde(default)]
     pub preaching_warm_bg: bool,
+    #[serde(default)]
+    pub selected_lectionary: crate::lectionary::LectionaryKind,
+    #[serde(default)]
+    pub rcl_track: crate::lectionary::RclTrack,
+    /// Hides the lectionary/track picker in the sidebar — most users pick
+    /// one lectionary and never touch it again. Defaults on; a status-bar
+    /// toggle reveals the picker for the (rare) case of switching.
+    #[serde(default = "default_true")]
+    pub lectionary_simple_mode: bool,
 }
 
 fn default_work_dir() -> PathBuf {
@@ -87,6 +96,9 @@ impl Default for Config {
             print_include_tags: false,
             print_font_pt: default_print_font_pt(),
             preaching_warm_bg: false,
+            selected_lectionary: crate::lectionary::LectionaryKind::default(),
+            rcl_track: crate::lectionary::RclTrack::default(),
+            lectionary_simple_mode: true,
         }
     }
 }

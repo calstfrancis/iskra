@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.0-dev1] — Multiple lectionaries and a sidebar picker
+
+### Added
+- Two more selectable lectionaries alongside the RCL: the Roman Catholic Sunday Lectionary and the Narrative Lectionary (Luther Seminary's 4-year cycle), plus an RCL Track 2 (Complementary) option for Ordinary Time's OT+Psalm pairing. Switch between them from a picker in the lectionary sidebar.
+- "simple" toggle in the status bar (Simple Mode, on by default): hides the lectionary/track picker for the common case of never switching. Turn it off to reveal the picker.
+
 ## [0.3.0] "Kindled Verse" — Scripture citations, printable Preaching View, and movement tools
 
 ### Added

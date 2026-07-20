@@ -3,21 +3,51 @@ use serde::{Deserialize, Serialize};
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// Snapshot of the resolved Revised Common Lectionary data for the planned
-/// date, denormalized into the sermon file so it survives without re-running
-/// the resolver (and so the file is self-describing in git history). Refreshed
-/// whenever the planned date changes.
+/// Snapshot of the resolved lectionary data for the planned date,
+/// denormalized into the sermon file so it survives without re-running the
+/// resolver (and so the file is self-describing in git history). Refreshed
+/// whenever the planned date OR the selected lectionary/track changes.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct LectionaryLink {
+    #[serde(default)]
+    pub source: crate::lectionary::LectionaryKind,
     pub week: String,
     pub season: String,
     pub year: String,
     pub colour: String,
     pub colour_hex: String,
-    pub ot: String,
-    pub psalm: String,
-    pub epistle: String,
-    pub gospel: String,
+    /// (label, citation) pairs in display order — e.g. `[("OT", "Isa 2:1–5"),
+    /// ("Psalm", "Ps 122"), ...]`. A flat list rather than fixed OT/Psalm/
+    /// Epistle/Gospel fields because the Narrative Lectionary doesn't share
+    /// RCL/Catholic's four-slot shape.
+    #[serde(default)]
+    pub readings: Vec<(String, String)>,
+    /// Read-compat only for sermon files saved before Iskra supported more
+    /// than the RCL (pre-0.x multi-lectionary schema) — never written by
+    /// this version. See `Self::readings_or_legacy`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) ot: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) psalm: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) epistle: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) gospel: String,
+}
+
+impl LectionaryLink {
+    /// `readings` if present, else synthesized from the legacy OT/Psalm/
+    /// Epistle/Gospel fields for a sermon file saved before this schema.
+    pub fn readings_or_legacy(&self) -> Vec<(String, String)> {
+        if !self.readings.is_empty() {
+            return self.readings.clone();
+        }
+        [("OT", &self.ot), ("Psalm", &self.psalm), ("Epistle", &self.epistle), ("Gospel", &self.gospel)]
+            .into_iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(label, v)| (label.to_string(), v.clone()))
+            .collect()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

@@ -1,9 +1,10 @@
 //! Header-centre control: a `MenuButton` styled to read like `AdwWindowTitle`
 //! (bold title + a subtitle line combining the planned date with a coloured
 //! season dot) that opens a popover with a title `Entry` and a `gtk::Calendar`
-//! for picking the date. Picking a day resolves `rcl::get_liturgical_info` and
-//! routes the result through `Cmd::SetPlannedDate` — date and lectionary
-//! snapshot change as one undo step.
+//! for picking the date. Picking a day resolves `lectionary::get_info` (using
+//! whichever lectionary/track is selected in `Config`) and routes the result
+//! through `Cmd::SetPlannedDate` — date and lectionary snapshot change as
+//! one undo step.
 //!
 //! Built in two phases, like `ui::editor::Editor`: `new()` constructs the
 //! widget tree so it can be placed in the header immediately, and `init()`
@@ -19,8 +20,8 @@ use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Button, Calendar, Entry, Label, MenuButton, Orientation, Popover};
 
 use crate::commands::Cmd;
+use crate::lectionary;
 use crate::model::Sermon;
-use crate::rcl;
 use crate::state::AppState;
 use crate::ui::editor::ApplyFn;
 use crate::ui::styles;
@@ -229,7 +230,11 @@ fn apply_planned_date(state: &Rc<RefCell<AppState>>, apply: &ApplyFn, new_date: 
         let st = state.borrow();
         (st.sermon.planned_date, st.sermon.lectionary.clone())
     };
-    let new_link = new_date.map(|d| rcl::get_liturgical_info(d).into());
+    let (kind, track) = {
+        let st = state.borrow();
+        (st.config.selected_lectionary, st.config.rcl_track)
+    };
+    let new_link = new_date.map(|d| lectionary::get_info(kind, track, d));
     let new = (new_date, new_link);
     if old != new {
         apply(Cmd::SetPlannedDate { old, new });

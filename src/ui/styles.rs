@@ -18,6 +18,10 @@ const GLOBAL_CSS: &str = ".paned > separator { \
     .status-toggle:hover label { \
         opacity: 1.0; \
     } \
+    .status-toggle-on label { \
+        font-weight: bold; \
+        opacity: 1.0; \
+    } \
     .tag-chip { \
         border-radius: 999px; \
         padding: 2px 4px 2px 11px; \

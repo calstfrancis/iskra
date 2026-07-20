@@ -153,7 +153,9 @@ impl AppWindow {
         title_date.init(&state, apply.clone());
         status_bar.init(apply.clone(), state.clone());
         status_bar.refresh(&state.borrow().sermon);
-        lectionary_panel.init(apply.clone());
+        status_bar.set_simple_mode(state.borrow().config.lectionary_simple_mode);
+        lectionary_panel.init(apply.clone(), state.clone());
+        lectionary_panel.refresh(&state.borrow().sermon);
         editor.set_on_copy_movement({
             let window = window.clone();
             let state = state.clone();
@@ -257,6 +259,24 @@ impl AppWindow {
             let window = window.clone();
             status_bar.version_btn.connect_clicked(move |_| {
                 show_changelog(&window);
+            });
+        }
+
+        // ── Simple Mode toggle → shows/hides the lectionary picker ───────
+        {
+            let state = state.clone();
+            let toggle_btn = status_bar.simple_toggle.clone();
+            let status_bar = status_bar.clone();
+            let lectionary_panel = lectionary_panel.clone();
+            toggle_btn.connect_clicked(move |_| {
+                let on = {
+                    let mut st = state.borrow_mut();
+                    st.config.lectionary_simple_mode = !st.config.lectionary_simple_mode;
+                    st.config.lectionary_simple_mode
+                };
+                let _ = state.borrow().config.save();
+                status_bar.set_simple_mode(on);
+                lectionary_panel.refresh(&state.borrow().sermon);
             });
         }
 

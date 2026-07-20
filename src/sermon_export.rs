@@ -119,6 +119,18 @@ fn tag_suffix(idea_tag: &str, part_tag: &str) -> String {
     }
 }
 
+/// Looks up a reading by label (case-insensitive) — the Rubric interchange
+/// format's OT/Psalm/Epistle/Gospel fields only really fit RCL/Catholic's
+/// four-slot shape, so a Narrative Lectionary sermon simply exports whatever
+/// subset of those labels its readings happen to use (typically none,
+/// leaving those fields absent — see `SermonMeta`'s `skip_serializing_if`).
+fn reading_field(link: &crate::model::LectionaryLink, label: &str) -> Option<String> {
+    link.readings_or_legacy()
+        .into_iter()
+        .find(|(l, _)| l.eq_ignore_ascii_case(label))
+        .map(|(_, v)| v)
+}
+
 /// Renders the full `.sermon` TOML document.
 pub fn export_sermon(sermon: &Sermon, include_tags: bool) -> String {
     let link = sermon.lectionary.as_ref();
@@ -133,10 +145,10 @@ pub fn export_sermon(sermon: &Sermon, include_tags: bool) -> String {
             season: link.map(|l| l.season.clone()),
             year: link.map(|l| l.year.clone()),
             colour: link.map(|l| l.colour.clone()),
-            ot: link.map(|l| l.ot.clone()),
-            psalm: link.map(|l| l.psalm.clone()),
-            epistle: link.map(|l| l.epistle.clone()),
-            gospel: link.map(|l| l.gospel.clone()),
+            ot: link.and_then(|l| reading_field(l, "OT")),
+            psalm: link.and_then(|l| reading_field(l, "Psalm")),
+            epistle: link.and_then(|l| reading_field(l, "Epistle")),
+            gospel: link.and_then(|l| reading_field(l, "Gospel")),
             s_tags: sermon.s_tags.clone(),
             t_tags: sermon.t_tags.clone(),
         },

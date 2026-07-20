@@ -44,6 +44,7 @@ impl DeletedEntry {
 pub struct StatusBar {
     pub root: GtkBox,
     pub version_btn: Button,
+    pub simple_toggle: Button,
     s_tags_box: GtkBox,
     t_tags_box: GtkBox,
     saved_label: Label,
@@ -126,6 +127,18 @@ impl StatusBar {
         recent_btn.set_popover(Some(&recent_popover));
         root.append(&recent_btn);
 
+        // Simple Mode toggle — bold when ON (picker hidden), regular when
+        // OFF (picker shown in the lectionary sidebar). Same name-as-label,
+        // font-weight-only convention as every other status-bar toggle.
+        let simple_toggle = Button::with_label("simple");
+        simple_toggle.add_css_class("flat");
+        simple_toggle.add_css_class("caption");
+        simple_toggle.add_css_class("status-toggle");
+        simple_toggle.set_tooltip_text(Some(
+            "Simple Mode hides the lectionary/track picker — turn off to switch lectionaries",
+        ));
+        root.append(&simple_toggle);
+
         let sep = Separator::new(Orientation::Vertical);
         sep.add_css_class("statusbar-sep");
         root.append(&sep);
@@ -140,6 +153,7 @@ impl StatusBar {
         Rc::new(Self {
             root,
             version_btn,
+            simple_toggle,
             s_tags_box,
             t_tags_box,
             saved_label,
@@ -181,6 +195,15 @@ impl StatusBar {
     pub fn set_saved(&self) {
         let now = chrono::Local::now().format("%-I:%M %p");
         self.saved_label.set_text(&format!("Saved {now}"));
+    }
+
+    /// Bold when Simple Mode is on (picker hidden), regular when off.
+    pub fn set_simple_mode(&self, on: bool) {
+        if on {
+            self.simple_toggle.add_css_class("status-toggle-on");
+        } else {
+            self.simple_toggle.remove_css_class("status-toggle-on");
+        }
     }
 
     /// Called from `app_window.rs::make_apply` for every applied `Cmd` that
