@@ -209,6 +209,33 @@ pub fn changed_files(repo_path: &Path) -> Vec<String> {
     names
 }
 
+/// How much work the backup repo is holding that GitHub doesn't have yet:
+/// uncommitted files plus commits ahead of the tracking branch. `None` when
+/// the work dir isn't a git repo or has no remote — sync isn't set up, so
+/// there's nothing to be behind on.
+///
+/// Counts uncommitted *files* and unpushed *commits* into one number. They're
+/// different units, but the status bar is answering "is there work at risk?",
+/// not reporting git internals — and in practice one sermon edit is one file
+/// that becomes one commit.
+pub fn pending_sync_count(repo_path: &Path) -> Option<usize> {
+    if git_repo_root(repo_path).is_none() || !has_remote(repo_path) {
+        return None;
+    }
+    let uncommitted = changed_files(repo_path).len();
+    // A missing upstream (never pushed) makes `rev-list` fail rather than
+    // return 0 — treated as "nothing countable" so the indicator falls back
+    // to the uncommitted count instead of vanishing.
+    let ahead = git_cmd(repo_path)
+        .args(["rev-list", "--count", "@{upstream}..HEAD"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8_lossy(&out.stdout).trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    Some(uncommitted + ahead)
+}
+
 pub struct FileHistoryEntry {
     pub commit: String,
     pub date: chrono::DateTime<Local>,

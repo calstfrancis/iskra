@@ -8,7 +8,7 @@ use crate::model::Sermon;
 /// The single in-memory source of truth for the sermon currently open in the
 /// editor. Lives behind an `Rc<RefCell<AppState>>` owned by `AppWindow`; every
 /// mutation goes through `ui::app_window::apply` (the "single door" — see
-/// Plans/plan.md) rather than touching `sermon` directly.
+/// `app_window.rs`) rather than touching `sermon` directly.
 pub struct AppState {
     pub sermon: Sermon,
     pub path: PathBuf,

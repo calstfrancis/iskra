@@ -1,5 +1,5 @@
 //! Throwaway prototype validating GTK4 drag-and-drop mechanics before they're
-//! wired into the real editor (see Plans/plan.md §3 — dev2's risk gate). Run
+//! wired into the real editor. Run
 //! with `cargo run --example dnd_proto` on the target desktop (KDE/Wayland)
 //! and manually verify all seven behaviors listed at the bottom of this file.
 //! Nothing here is reused verbatim by the app — once validated, the pattern
@@ -576,5 +576,5 @@ fn autoscroll_if_near_edge(scroller: &ScrolledWindow, y: f64) {
 // 8. Movement/box reorder                                     ✓ verified
 //
 // Real-desktop (KDE/Wayland) confirmation is still worth doing once the
-// pattern lands in src/ui/dnd.rs, per Plans/plan.md, but the mechanics
+// pattern lands in src/ui/dnd.rs, but the mechanics
 // above are GTK4 API behavior, not X11-specific — expect them to carry over.

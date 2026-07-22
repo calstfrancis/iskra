@@ -22,6 +22,7 @@ use crate::ui::export_dialog::ExportDialog;
 use crate::ui::history_window::HistoryWindow;
 use crate::ui::lectionary_panel::LectionaryPanel;
 use crate::ui::library_window::LibraryWindow;
+use crate::ui::preached_before::PreachedBeforeWindow;
 use crate::ui::preaching_print;
 use crate::ui::preaching_view::PreachingView;
 use crate::ui::status_bar::{DeletedEntry, StatusBar};
@@ -82,6 +83,8 @@ impl AppWindow {
         menu_box.append(&print_item);
         let history_item = make_menu_item("History…", "Ctrl+Shift+H");
         menu_box.append(&history_item);
+        let preached_before_item = make_menu_item("Preached Before…", "");
+        menu_box.append(&preached_before_item);
         let show_folder_item = make_menu_item("Show Sermons Folder", "");
         show_folder_item.set_tooltip_text(Some(&state.borrow().config.sermons_dir().display().to_string()));
         menu_box.append(&show_folder_item);
@@ -121,6 +124,20 @@ impl AppWindow {
         split_view.set_show_sidebar(state.borrow().config.sidebar_visible);
         split_view.set_sidebar_width_fraction(state.borrow().config.sidebar_width_fraction);
 
+        // Below 700px the sidebar and the movements column can't both hold a
+        // usable width, so the split view collapses and the sidebar becomes an
+        // overlay the sidebar button slides in over the editor. `collapsed` is
+        // orthogonal to `show-sidebar`, so this never fights the persisted
+        // visibility setting — a narrow window that reopens wide gets its
+        // docked sidebar back.
+        let breakpoint = adw::Breakpoint::new(adw::BreakpointCondition::new_length(
+            adw::BreakpointConditionLengthType::MaxWidth,
+            700.0,
+            adw::LengthUnit::Px,
+        ));
+        breakpoint.add_setter(&split_view, "collapsed", &true.to_value());
+        window.add_breakpoint(breakpoint);
+
         let toast_overlay = adw::ToastOverlay::new();
         toast_overlay.set_child(Some(&split_view));
 
@@ -153,7 +170,11 @@ impl AppWindow {
         title_date.init(&state, apply.clone());
         status_bar.init(apply.clone(), state.clone());
         status_bar.refresh(&state.borrow().sermon);
+        status_bar.refresh_recent_list();
         status_bar.set_simple_mode(state.borrow().config.lectionary_simple_mode);
+        status_bar.set_pending_sync(crate::git_sync::pending_sync_count(
+            &state.borrow().config.work_dir,
+        ));
         lectionary_panel.init(apply.clone(), state.clone());
         lectionary_panel.refresh(&state.borrow().sermon);
         editor.set_on_copy_movement({
@@ -216,6 +237,7 @@ impl AppWindow {
                     title_date.refresh(&state.borrow().sermon);
                     lectionary_panel.refresh(&state.borrow().sermon);
                     status_bar.refresh(&state.borrow().sermon);
+                    status_bar.refresh_recent_list();
                     status_bar.set_dirty();
                     undo_btn.set_sensitive(state.borrow().undo.can_undo());
                     redo_btn.set_sensitive(state.borrow().undo.can_redo());
@@ -278,6 +300,67 @@ impl AppWindow {
                 status_bar.set_simple_mode(on);
                 lectionary_panel.refresh(&state.borrow().sermon);
             });
+        }
+
+        // ── Focus Mode ────────────────────────────────────────────────────
+        // Hides the sidebar and the status bar's tag groups via a CSS class on
+        // the window rather than destroying widgets, so turning it back off
+        // restores the exact previous layout. Distinct from Simple Mode: that
+        // hides one advanced control, this hides secondary panes.
+        let set_focus_mode: Rc<dyn Fn(bool)> = {
+            let window = window.clone();
+            let split_view = split_view.clone();
+            let status_bar = status_bar.clone();
+            let state = state.clone();
+            Rc::new(move |on: bool| {
+                if on {
+                    window.add_css_class("focus-mode");
+                } else {
+                    window.remove_css_class("focus-mode");
+                }
+                split_view.set_show_sidebar(if on {
+                    false
+                } else {
+                    state.borrow().config.sidebar_visible
+                });
+                status_bar.set_focus_mode(on);
+            })
+        };
+        set_focus_mode(state.borrow().config.focus_mode);
+        let toggle_focus_mode: Rc<dyn Fn()> = {
+            let state = state.clone();
+            let set_focus_mode = set_focus_mode.clone();
+            Rc::new(move || {
+                let on = {
+                    let mut st = state.borrow_mut();
+                    st.config.focus_mode = !st.config.focus_mode;
+                    st.config.focus_mode
+                };
+                let _ = state.borrow().config.save();
+                set_focus_mode(on);
+            })
+        };
+        {
+            let toggle_focus_mode = toggle_focus_mode.clone();
+            status_bar
+                .focus_toggle
+                .connect_clicked(move |_| toggle_focus_mode());
+        }
+        {
+            let toggle_focus_mode = toggle_focus_mode.clone();
+            let ctl = gtk4::EventControllerKey::new();
+            ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            ctl.connect_key_pressed(move |_, key, _, modifiers| {
+                if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                    && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK)
+                    && key.to_lower() == gtk4::gdk::Key::f
+                {
+                    toggle_focus_mode();
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            window.add_controller(ctl);
         }
 
         // ── Hamburger menu: Export… ───────────────────────────────────────
@@ -411,6 +494,7 @@ impl AppWindow {
             let state = state.clone();
             let toast_overlay = toast_overlay.clone();
             let btn_for_closure = sync_btn.clone();
+            let status_bar_for_sync = status_bar.clone();
             sync_btn.connect_clicked(move |_| {
                 let work_dir = state.borrow().config.work_dir.clone();
                 if !git_sync::has_remote(&work_dir) {
@@ -419,22 +503,33 @@ impl AppWindow {
                     let toast_overlay2 = toast_overlay.clone();
                     let sync_btn2 = btn_for_closure.clone();
                     let work_dir2 = work_dir.clone();
+                    let status_bar2 = status_bar_for_sync.clone();
                     setup.window().connect_destroy(move |_| {
                         if git_sync::has_remote(&work_dir2) {
-                            do_sync(work_dir2.clone(), window2.clone(), toast_overlay2.clone(), sync_btn2.clone());
+                            do_sync(work_dir2.clone(), window2.clone(), toast_overlay2.clone(), sync_btn2.clone(), status_bar2.clone());
                         }
                     });
                     setup.present();
                     return;
                 }
-                do_sync(work_dir, win_for_closure.clone(), toast_overlay.clone(), btn_for_closure.clone());
+                do_sync(work_dir, win_for_closure.clone(), toast_overlay.clone(), btn_for_closure.clone(), status_bar_for_sync.clone());
             });
+        }
+        {
+            // The status bar's "N to push" pill is a second door to the same
+            // action, so it triggers the headerbar button rather than
+            // duplicating the has-remote/setup-wizard branch above.
+            let sync_btn = sync_btn.clone();
+            status_bar
+                .sync_status_btn
+                .connect_clicked(move |_| sync_btn.emit_clicked());
         }
         {
             let win_for_closure = window.clone();
             let state = state.clone();
             let toast_overlay = toast_overlay.clone();
             let sync_btn = sync_btn.clone();
+            let status_bar_for_key = status_bar.clone();
             let ctl = gtk4::EventControllerKey::new();
             ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
             ctl.connect_key_pressed(move |_, key, _, modifiers| {
@@ -444,7 +539,7 @@ impl AppWindow {
                 {
                     let work_dir = state.borrow().config.work_dir.clone();
                     if git_sync::has_remote(&work_dir) {
-                        do_sync(work_dir, win_for_closure.clone(), toast_overlay.clone(), sync_btn.clone());
+                        do_sync(work_dir, win_for_closure.clone(), toast_overlay.clone(), sync_btn.clone(), status_bar_for_key.clone());
                     }
                     return glib::Propagation::Stop;
                 }
@@ -473,6 +568,17 @@ impl AppWindow {
                 lw.set_current_open(Some(state.borrow().path.clone()));
                 force_full_refresh(&state);
                 lw.window().close();
+            });
+        }
+        {
+            let state = state.clone();
+            let menu_popover = menu_popover.clone();
+            let window = window.clone();
+            let toast_overlay = toast_overlay.clone();
+            let lw = library_window.clone();
+            preached_before_item.connect_clicked(move |_| {
+                menu_popover.popdown();
+                open_preached_before(&window, &state, &toast_overlay, &lw);
             });
         }
         let create_new_sermon: Rc<dyn Fn(Option<String>)> = {
@@ -549,6 +655,7 @@ impl AppWindow {
             let split_view = split_view.clone();
             let create_new_sermon = create_new_sermon.clone();
             let toast_overlay = toast_overlay.clone();
+            let toggle_focus_mode = toggle_focus_mode.clone();
             palette.set_on_activate(move |id| match id {
                 "new_sermon" => create_new_sermon(None),
                 "open_library" => library_window.present(),
@@ -573,6 +680,24 @@ impl AppWindow {
                     }
                 }
                 "toggle_sidebar" => split_view.set_show_sidebar(!split_view.shows_sidebar()),
+                "toggle_focus_mode" => toggle_focus_mode(),
+                "preached_before" => {
+                    open_preached_before(&window, &state, &toast_overlay, &library_window)
+                }
+                "promote_idea" => {
+                    // Palette steals focus, so this acts on the idea that was
+                    // focused when the palette opened, not the live one.
+                    let cmd = editor.focused_idea_id().and_then(|id| {
+                        let st = state.borrow();
+                        st.sermon
+                            .find_idea(&id)
+                            .and_then(|(m, i)| crate::commands::promote_idea_to_movement(&st.sermon, m, i))
+                    });
+                    match cmd {
+                        Some(cmd) => apply(cmd),
+                        None => show_toast(&toast_overlay, "Select an idea first"),
+                    }
+                }
                 "add_movement" => {
                     let at = state.borrow().sermon.movements.len();
                     let movement = crate::model::Movement::new(at);
@@ -836,7 +961,7 @@ fn make_apply(
     Rc::new(move |cmd: Cmd| {
         let structural = cmd.is_structural();
         note_past_sermon_reuse(&cmd, &state, &toast_overlay);
-        let deletions = collect_deletions(&cmd);
+        let deletions = collect_deletions(&cmd, &state.borrow().sermon.id);
         {
             let mut st = state.borrow_mut();
             let AppState { undo, sermon, .. } = &mut *st;
@@ -881,29 +1006,59 @@ fn show_toast(overlay: &adw::ToastOverlay, message: &str) {
 /// Feeds `StatusBar`'s "Recently deleted" tray — walks `cmd` (recursing into
 /// `Composite`, since bulk delete/merge-movement/etc. all wrap their deletes
 /// in one) collecting every `DeleteIdea`/`DeleteMovement` it contains.
-fn collect_deletions(cmd: &Cmd) -> Vec<DeletedEntry> {
-    fn walk(cmd: &Cmd, out: &mut Vec<DeletedEntry>) {
+fn collect_deletions(cmd: &Cmd, sermon_id: &str) -> Vec<DeletedEntry> {
+    fn walk(cmd: &Cmd, sermon_id: &str, out: &mut Vec<DeletedEntry>) {
         match cmd {
             Cmd::DeleteIdea { movement, index, idea } => out.push(DeletedEntry::Idea {
+                sermon_id: sermon_id.to_string(),
                 movement: *movement,
                 index: *index,
                 idea: idea.clone(),
             }),
             Cmd::DeleteMovement { at, movement } => out.push(DeletedEntry::Movement {
+                sermon_id: sermon_id.to_string(),
                 at: *at,
                 movement: movement.clone(),
             }),
             Cmd::Composite(cmds) => {
                 for c in cmds {
-                    walk(c, out);
+                    walk(c, sermon_id, out);
                 }
             }
             _ => {}
         }
     }
     let mut out = Vec::new();
-    walk(cmd, &mut out);
+    walk(cmd, sermon_id, &mut out);
     out
+}
+
+/// Rescans the library first: the index is only refreshed on library-window
+/// open and after a save, so a sermon edited elsewhere (or pulled in by git
+/// sync) since then would otherwise be missing from the comparison.
+fn open_preached_before(
+    window: &adw::ApplicationWindow,
+    state: &Rc<RefCell<AppState>>,
+    toast_overlay: &adw::ToastOverlay,
+    library_window: &Rc<LibraryWindow>,
+) {
+    {
+        let mut st = state.borrow_mut();
+        st.library = crate::library::LibraryIndex::scan(&st.config.sermons_dir());
+    }
+    let st = state.borrow();
+    let panel = PreachedBeforeWindow::new(window, &st.library, &st.sermon, {
+        let state = state.clone();
+        let toast_overlay = toast_overlay.clone();
+        let lw = library_window.clone();
+        move |path| {
+            switch_to_sermon(&state, &toast_overlay, path);
+            lw.set_current_open(Some(state.borrow().path.clone()));
+            force_full_refresh(&state);
+        }
+    });
+    drop(st);
+    panel.present();
 }
 
 fn note_past_sermon_reuse(cmd: &Cmd, state: &Rc<RefCell<AppState>>, toast_overlay: &adw::ToastOverlay) {
@@ -959,6 +1114,9 @@ fn arm_autosave(
                     st.dirty = false;
                     st.library = crate::library::LibraryIndex::scan(&st.config.sermons_dir());
                     status_bar.set_saved();
+                    status_bar.set_pending_sync(crate::git_sync::pending_sync_count(
+                        &st.config.work_dir,
+                    ));
                 }
                 Err(e) => {
                     tracing::warn!("autosave failed for {}: {e}", path.display());
@@ -1049,6 +1207,7 @@ fn do_sync(
     window: adw::ApplicationWindow,
     overlay: adw::ToastOverlay,
     btn: Button,
+    status_bar: Rc<StatusBar>,
 ) {
     use std::sync::mpsc::TryRecvError;
 
@@ -1066,6 +1225,7 @@ fn do_sync(
         Ok(result) => {
             btn.set_sensitive(true);
             show_sync_result(&window, &overlay, result);
+            status_bar.set_pending_sync(git_sync::pending_sync_count(&root));
             glib::ControlFlow::Break
         }
         Err(TryRecvError::Empty) => glib::ControlFlow::Continue,

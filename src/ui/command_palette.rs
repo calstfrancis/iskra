@@ -361,6 +361,22 @@ pub fn default_commands() -> Vec<PaletteItem> {
             subtitle: "Snap every movement open".into(),
         },
         PaletteItem {
+            id: "preached_before".into(),
+            label: "Preached Before…".into(),
+            subtitle: "Past sermons sharing this one's Scripture references".into(),
+        },
+        PaletteItem {
+            id: "toggle_focus_mode".into(),
+            label: "Toggle Focus Mode".into(),
+            subtitle: "Hide the sidebar and tag groups for distraction-free writing (Ctrl+Shift+F)"
+                .into(),
+        },
+        PaletteItem {
+            id: "promote_idea".into(),
+            label: "Promote Idea to Movement".into(),
+            subtitle: "Turn the focused idea into its own movement (Alt+Left)".into(),
+        },
+        PaletteItem {
             id: "changelog".into(),
             label: "Changelog".into(),
             subtitle: "View what's changed in this version".into(),

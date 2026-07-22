@@ -27,7 +27,7 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         padding: 2px 4px 2px 11px; \
         font-size: 0.78em; \
         font-weight: 600; \
-        box-shadow: 0 1px 1px alpha(black, 0.06); \
+        box-shadow: 0 1px 1px alpha(@shade_color, 0.7); \
     } \
     .tag-chip-s { \
         background-color: @accent_bg_color; \
@@ -70,7 +70,7 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         border: 1px solid alpha(@borders, 1.0); \
         border-radius: 12px; \
         padding: 8px; \
-        box-shadow: 0 2px 7px alpha(black, 0.14); \
+        box-shadow: 0 2px 7px alpha(@shade_color, 0.9); \
     } \
     .movement-card-header { \
         padding: 4px 4px 4px 8px; \
@@ -108,7 +108,8 @@ const GLOBAL_CSS: &str = ".paned > separator { \
     } \
     .idea-bar:focus-within { \
         border-color: @accent_color; \
-        box-shadow: 0 0 0 1px alpha(@accent_color, 0.35); \
+        background: @view_bg_color; \
+        box-shadow: 0 0 0 2px alpha(@accent_color, 0.30); \
     } \
     .idea-entry, \
     .movement-name-entry { \
@@ -116,11 +117,17 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         border: none; \
         box-shadow: none; \
         padding: 4px 2px; \
+        border-radius: 10px; \
+        outline: none; \
+    } \
+    .idea-entry > text, \
+    .movement-name-entry > text { \
+        border-radius: 10px; \
     } \
     .idea-notes { \
         background: alpha(@window_fg_color, 0.04); \
         border: 1px solid alpha(@borders, 0.7); \
-        border-radius: 10px; \
+        border-radius: 12px; \
     } \
     .idea-notes text { \
         background: transparent; \
@@ -209,6 +216,42 @@ const GLOBAL_CSS: &str = ".paned > separator { \
         opacity: 1.0; \
         background: alpha(@accent_color, 0.18); \
     } \
+    .preached-before-row { \
+        padding: 8px 10px; \
+        border-radius: 10px; \
+        background: alpha(@window_fg_color, 0.035); \
+    } \
+    .preached-before-row:hover { \
+        background: alpha(@accent_color, 0.08); \
+    } \
+    .status-unpushed { \
+        color: @warning_color; \
+        font-weight: 600; \
+        padding: 2px 8px; \
+        border-radius: 999px; \
+        background: alpha(@warning_color, 0.14); \
+        min-height: 0; \
+    } \
+    .status-unpushed:hover { \
+        background: alpha(@warning_color, 0.26); \
+    } \
+    .focus-mode .movement-card { \
+        box-shadow: none; \
+    } \
+    .movement-menu { \
+        padding: 2px; \
+        min-width: 220px; \
+    } \
+    .movement-menu separator { \
+        margin: 3px 4px; \
+    } \
+    .movement-menu-row { \
+        padding: 6px 10px; \
+        border-radius: 8px; \
+    } \
+    .movement-menu-destructive:hover label { \
+        color: @error_color; \
+    } \
     .movement-idea-count-badge { \
         background: alpha(@window_fg_color, 0.08); \
         border-radius: 999px; \
@@ -222,12 +265,27 @@ const GLOBAL_CSS: &str = ".paned > separator { \
     .movement-header-icon:checked { \
         opacity: 1.0; \
     } \
-    .idea-delete { \
-        opacity: 0.35; \
+    .idea-expander { \
+        opacity: 0.55; \
+        transition: opacity 100ms ease; \
+    } \
+    .idea-delete, \
+    .idea-expander-empty { \
+        opacity: 0; \
+        transition: opacity 100ms ease; \
     } \
     .idea-bar:hover .idea-delete, \
-    .idea-delete:hover { \
-        opacity: 0.9; \
+    .idea-bar:focus-within .idea-delete, \
+    .idea-delete:focus, \
+    .idea-bar:hover .idea-expander-empty, \
+    .idea-bar:focus-within .idea-expander-empty, \
+    .idea-expander-empty:focus { \
+        opacity: 0.6; \
+    } \
+    .idea-delete:hover, \
+    .idea-expander:hover, \
+    .idea-expander-empty:hover { \
+        opacity: 1.0; \
     } \
     .season-dot { \
         min-width: 9px; \
@@ -318,9 +376,8 @@ const GLOBAL_CSS: &str = ".paned > separator { \
     } \
     .idea-row-selected .idea-bar { \
         background: alpha(@accent_color, 0.16); \
-        border-radius: 6px; \
         border-left: 3px solid @accent_color; \
-        padding-left: 7px; \
+        padding-left: 8px; \
     } \
     .selection-rect { \
         background: alpha(@accent_color, 0.12); \

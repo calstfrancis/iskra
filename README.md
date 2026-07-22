@@ -6,7 +6,7 @@ Part of the Fond suite (alongside Zerkalo, Rubric, Kopilka, Gost, Skrizhal, Cher
 
 ## Status
 
-Early development (v0.1.0-dev). See `Plans/plan.md` for the full design and milestone plan, and `CHANGELOG.md` for what's landed so far.
+Active development. The editor, movements, drag-and-drop reordering, tagging, scripture citations, lectionary readings, Preaching View, printing, export, git-backed sync, and history browsing are all in place. See `CHANGELOG.md` for what's landed so far.
 
 ## Building
 

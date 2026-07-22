@@ -256,6 +256,48 @@ pub fn slug(title: &str) -> String {
     }
 }
 
+/// A deleted idea or movement held in the "Recently deleted" tray. Scoped to
+/// the sermon it came from (`sermon_id`) so restoring into a *different*
+/// open sermon can never happen — the tray is global (it lives in the config,
+/// not the sermon file) precisely so a deletion is still recoverable after
+/// switching sermons and back.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "kind")]
+pub enum DeletedRecord {
+    Idea {
+        sermon_id: String,
+        movement: usize,
+        index: usize,
+        idea: Idea,
+    },
+    Movement {
+        sermon_id: String,
+        at: usize,
+        movement: Movement,
+    },
+}
+
+impl DeletedRecord {
+    pub fn sermon_id(&self) -> &str {
+        match self {
+            DeletedRecord::Idea { sermon_id, .. } | DeletedRecord::Movement { sermon_id, .. } => {
+                sermon_id
+            }
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            DeletedRecord::Idea { idea, .. } if !idea.text.trim().is_empty() => idea.text.clone(),
+            DeletedRecord::Idea { .. } => "(untitled idea)".to_string(),
+            DeletedRecord::Movement { movement, .. } if !movement.name.trim().is_empty() => {
+                format!("Movement: {}", movement.name)
+            }
+            DeletedRecord::Movement { .. } => "(untitled movement)".to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

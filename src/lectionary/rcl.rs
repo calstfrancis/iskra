@@ -1,7 +1,7 @@
 //! Revised Common Lectionary readings + liturgical calendar logic.
 //!
 //! Mechanical port of Rubric's `rcl_data.py` (stdlib-only, no shared crate
-//! possible across the Python/Rust boundary — see Plans/plan.md §1 recon
+//! possible across the Python/Rust boundary — see Rubric's `rcl_data.py`
 //! answer 2). Ordinary Time OT+Psalm follows `RclTrack` — Semicontinuous
 //! (UCC default, matching Rubric) or Complementary (`rcl_complementary_data`)
 //! — Epistle/Gospel are the same either way.

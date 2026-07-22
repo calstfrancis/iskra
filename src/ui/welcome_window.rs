@@ -12,7 +12,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const RELEASE_NAME: &str = "First Light";
+const RELEASE_NAME: &str = "Banked Ember";
 
 pub struct WelcomeWindow {
     window: adw::Window,
@@ -90,21 +90,16 @@ impl WelcomeWindow {
                 "Type an idea and press + Add idea to add another",
                 "Click the triangle beside an idea to expand its notes",
                 "Drag the handle on an idea or movement to reorder — or drop into blank space to start a new movement",
-                "Use the idea/part tags below each idea to mark structure",
-                "Add scripture (s.) and theme (t.) tags in the status bar to make sermons searchable later",
+                "Use the idea/part tag chips inside each idea row to mark structure",
+                "Type @ in an idea to cite scripture (e.g. @john3:16) — the reference is added as a Scripture tag automatically",
+                "Add Scripture and Theme tags in the status bar to make sermons searchable later",
             ] {
                 body.append(&bullet_row(item));
             }
         } else {
             body.append(&section_label(&format!("What's New in {VERSION}")));
-            for item in [
-                "Added: two more lectionaries alongside the RCL — the Roman Catholic Sunday Lectionary and the Narrative Lectionary — plus an RCL Track 2 option, switchable from a picker in the lectionary sidebar",
-                "Added: a \"simple\" toggle in the status bar that hides the lectionary picker unless you need it",
-                "Added: Escape clears the current idea selection, and so does clicking empty space in the movements column",
-                "Fixed: grabbing a drag handle no longer selects rows instead of starting a drag — reordering ideas and movements is much more reliable",
-                "Fixed: drag handles are a larger target with a grab cursor, and the drag preview now sits under the pointer so the drop indicator lines up",
-            ] {
-                body.append(&bullet_row(item));
+            for item in super::changelog_window::whats_new_bullets(VERSION) {
+                body.append(&bullet_row(&item));
             }
         }
 
@@ -118,6 +113,8 @@ impl WelcomeWindow {
             ("Ctrl+E", "Export…"),
             ("Ctrl+Shift+P", "Preaching View"),
             ("Ctrl+Shift+H", "History…"),
+            ("Ctrl+Shift+F", "Focus Mode"),
+            ("Alt+Left", "Promote idea to movement"),
             ("Ctrl+Shift+G", "Commit & push"),
         ] {
             body.append(&shortcut_row(key, desc));
@@ -201,7 +198,8 @@ fn bullet_row(text: &str) -> GtkBox {
     let dot = Label::new(Some("•"));
     dot.set_valign(Align::Start);
     dot.add_css_class("dim-label");
-    let lbl = Label::new(Some(text));
+    let lbl = Label::new(None);
+    lbl.set_markup(&super::changelog_window::md_inline_to_pango(text));
     lbl.set_xalign(0.0);
     lbl.set_wrap(true);
     lbl.set_wrap_mode(gtk4::pango::WrapMode::WordChar);

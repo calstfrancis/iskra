@@ -5,14 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.4.0-dev2] — Multiple lectionaries, a sidebar picker, and sturdier drag-and-drop
+## [0.4.0] "Banked Ember" — Multiple lectionaries, a quieter editor, and a safety net that survives a restart
 
 ### Added
+- Focus Mode (Ctrl+Shift+F, the "focus" toggle in the status bar, or the command palette): hides the lectionary sidebar and the Scripture/Theme tag groups for distraction-free writing. Remembered between sessions. Distinct from Simple Mode, which hides one advanced control without touching the layout.
+- Promote an idea into its own movement with Alt+Left, or from the command palette — the idea leaves its movement and becomes a new one below, named after its text. Its notes and tags come with it rather than being dropped. The inverse, "Fold into movement above, keeping name", is in each movement's new "⋮" menu: unlike "Merge with movement above", it keeps the movement's name as an idea instead of discarding it.
+- "Preached Before…" (hamburger menu or command palette): every past sermon sharing a Scripture reference with the open one, grouped by reference, newest first, with one-click Open. The browsable form of the existing toast, which only ever appeared at the moment a tag was added and was easy to miss.
+- The status bar shows "N to push" when the git backup is holding uncommitted or unpushed work, and hides itself when everything is in sync. "Saved" only ever meant "written to disk" — the backup could sit days behind it silently, since commit-and-push is manual. Clicking it runs the same commit-and-push as Ctrl+Shift+G.
+- The window now adapts to narrow widths: below 700px the lectionary sidebar collapses into an overlay that slides in over the editor instead of squeezing the movements column. Widening the window docks it again, and the remembered sidebar visibility is untouched either way.
 - Two more selectable lectionaries alongside the RCL: the Roman Catholic Sunday Lectionary and the Narrative Lectionary (Luther Seminary's 4-year cycle), plus an RCL Track 2 (Complementary) option for Ordinary Time's OT+Psalm pairing. Switch between them from a picker in the lectionary sidebar.
 - "simple" toggle in the status bar (Simple Mode, on by default): hides the lectionary/track picker for the common case of never switching. Turn it off to reveal the picker.
 - Escape clears the current idea selection, and so does clicking empty space in the movements column.
 
+### Changed
+- The "Recently deleted" tray now survives a restart. It was session-scoped, so quitting silently emptied the safety net; deletions are now stored with the sermon they came from, and the tray only ever offers the open sermon's own.
+- Idea rows are much quieter: the duplicate and delete buttons fade in on hover or keyboard focus instead of sitting on every row permanently, and the notes triangle only stays visible on ideas that actually have notes. Six ideas used to mean eighteen always-on icons.
+- Movement headers are quieter: duplicate, merge-up, copy-to-sermon, and delete moved out of the header's row of near-identical grey icons into a single "⋮" menu, where they get proper labels. Only the collapse triangle and the drag handle stay inline.
+- The What's New window now builds its list from `CHANGELOG.md` at compile time instead of a hand-maintained copy, so the two can no longer disagree.
+- Status-bar toggles now report their on/off state to screen readers. State was carried by font weight alone, which assistive technology can't see.
+- Card and tag-chip shadows use libadwaita's adaptive shade colour instead of hardcoded black, so they render correctly in both light and dark themes.
+
 ### Fixed
+- Text entry inside idea rows and movement headers no longer draws a hard-cornered focus rectangle inside the rounded row — focus now shows as an accent ring on the row itself. Selecting an idea also no longer squares off its corners, and the notes box's radius matches the movement card's.
+- The welcome/What's New window showed the wrong release name: it was still reporting "First Light" (v0.2.0) after v0.3.0 "Kindled Verse" shipped.
+- Onboarding text still described the status bar's "s."/"t." tag labels, renamed to "Scripture"/"Themes" in v0.3.0, and didn't mention `@` scripture citations at all.
 - Dragging ideas and movements is far more reliable. Grabbing a drag handle no longer rubber-band-selects rows instead of starting a drag: the marquee gesture was claiming the press before the drag could begin, and it now refuses to start anywhere except genuine blank space in a movement's ideas box.
 - Drag handles are a larger target with a grab cursor and a clearer hover highlight, so they're easier to hit and read as draggable.
 - The drag preview now sits under the pointer instead of hanging below and to the right of it, so the drop indicator lines up with where the row appears to be.

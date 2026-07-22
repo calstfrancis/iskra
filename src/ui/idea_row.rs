@@ -50,6 +50,7 @@ pub fn build_idea_row(
     on_toggle_tag_filter: impl Fn(String) + 'static,
     on_rename_idea_tag_everywhere: impl Fn(String, String) + 'static,
     on_rename_part_tag_everywhere: impl Fn(String, String) + 'static,
+    on_promote: impl Fn() + 'static,
 ) -> IdeaRowWidgets {
     let on_toggle_tag_filter: Rc<dyn Fn(String)> = Rc::new(on_toggle_tag_filter);
     let root = GtkBox::new(Orientation::Vertical, 2);
@@ -130,6 +131,13 @@ pub fn build_idea_row(
         "pan-end-symbolic"
     });
     expander.add_css_class("flat");
+    expander.add_css_class("idea-expander");
+    // An idea with notes keeps its triangle visible as the only signal that
+    // there's hidden content; an empty one fades with the row's other
+    // occasional actions rather than implying there's something to expand.
+    if idea.notes.trim().is_empty() {
+        expander.add_css_class("idea-expander-empty");
+    }
     expander.set_active(idea.expanded);
     expander.set_tooltip_text(Some("Expand notes"));
     bar.append(&expander);
@@ -194,6 +202,8 @@ pub fn build_idea_row(
         // jumps straight to the top/bottom instead of one step at a time;
         // `on_move` takes `i32::MIN`/`i32::MAX` as "to the very end" sentinels
         // rather than a literal delta (see `editor.rs`'s interpretation).
+        // Alt+Left promotes the idea into its own movement, borrowing the
+        // outliner convention where left/right change an item's level.
         let key_ctl = gtk4::EventControllerKey::new();
         key_ctl.connect_key_pressed(move |_, key, _, modifiers| {
             if !modifiers.contains(gtk4::gdk::ModifierType::ALT_MASK) {
@@ -209,15 +219,30 @@ pub fn build_idea_row(
                     on_move(if shift { i32::MAX } else { 1 });
                     glib::Propagation::Stop
                 }
+                gtk4::gdk::Key::Left => {
+                    on_promote();
+                    glib::Propagation::Stop
+                }
                 _ => glib::Propagation::Proceed,
             }
         });
         entry.add_controller(key_ctl);
     }
-    notes_view.buffer().connect_changed(move |buf| {
-        let (start, end) = buf.bounds();
-        on_notes_changed(buf.text(&start, &end, false).to_string());
-    });
+    {
+        // Notes edits are non-structural (no rebuild), so the "has notes"
+        // styling has to be maintained live rather than set once at build.
+        let expander_for_notes = expander.clone();
+        notes_view.buffer().connect_changed(move |buf| {
+            let (start, end) = buf.bounds();
+            let text = buf.text(&start, &end, false).to_string();
+            if text.trim().is_empty() {
+                expander_for_notes.add_css_class("idea-expander-empty");
+            } else {
+                expander_for_notes.remove_css_class("idea-expander-empty");
+            }
+            on_notes_changed(text);
+        });
+    }
     {
         let popover = idea_tag_popover.popover().clone();
         let btn = idea_tag_btn.clone();

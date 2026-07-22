@@ -1,6 +1,6 @@
 # Iskra — Claude Instructions
 
-Iskra is the newest app in the Fond suite. Reference `../CLAUDE.md` (repo root) for suite-wide conventions (dev build / release workflow, versioning, flatpak publishing) — this file only covers what's Iskra-specific. Design plan: `Plans/plan.md`.
+Iskra is the newest app in the Fond suite. Reference `../CLAUDE.md` (repo root) for suite-wide conventions (dev build / release workflow, versioning, flatpak publishing) — this file only covers what's Iskra-specific.
 
 ## Build and release rules
 
@@ -9,7 +9,9 @@ Iskra is the newest app in the Fond suite. Reference `../CLAUDE.md` (repo root) 
 
 ## Version Management
 
-Same scheme as the rest of the suite (see root `CLAUDE.md`): dev builds are `X.Y.Z-devN`, releases strip the suffix. Version lives in `Cargo.toml` only — no separate release-name constant yet (add one to a welcome/what's-new window if/when one is built, matching Zerkalo's `RELEASE_NAME` pattern).
+Same scheme as the rest of the suite (see root `CLAUDE.md`): dev builds are `X.Y.Z-devN`, releases strip the suffix. Version lives in `Cargo.toml`, and the release name in `RELEASE_NAME` in `src/ui/welcome_window.rs` (matching Zerkalo's pattern).
+
+- `RELEASE_NAME` holds the **last shipped release's** name, since the welcome window renders `Version {VERSION} "{RELEASE_NAME}"` on every launch, including dev builds. Bump it at release time only — never during a dev build, where the version has moved on but the name hasn't been chosen yet. It went stale exactly this way once: the constant sat on v0.2.0's "First Light" straight through the v0.3.0 "Kindled Verse" release.
 
 - Update `CHANGELOG.md` on every dev build (in place for repeated dev builds of the same version, not a new heading each time).
 - **Never** add a metainfo `<release>` entry for a dev build — only at actual release time.
@@ -20,7 +22,7 @@ Same scheme as the rest of the suite (see root `CLAUDE.md`): dev builds are `X.Y
 - No multi-line docstrings or comment blocks.
 - No trailing summaries at the end of responses — the user can read the diff.
 
-## Architecture (see Plans/plan.md for full detail)
+## Architecture
 
 - **Framework: raw gtk4-rs, not relm4** — matches Zerkalo exactly (pins: gtk4 0.7/v4_10, libadwaita 0.5/v1_4, glib 0.18). Programmatic widgets only, no `.ui`/Blueprint/gresource.
 - **Single door**: every mutation to the open sermon goes through `apply(Cmd)` in `src/ui/app_window.rs`. Never mutate `AppState.sermon` directly from a widget callback — build a `Cmd` and route it through `apply` so undo/redo and autosave stay correct.
@@ -34,7 +36,7 @@ Same scheme as the rest of the suite (see root `CLAUDE.md`): dev builds are `X.Y
 - Every serializable struct needs `#[serde(default)]` on new fields so old sermon files never fail to load after a schema change. Bump `model::SCHEMA_VERSION` only for breaking changes, and keep `storage::load_sermon`'s version gate in sync.
 - Config at `~/.config/iskra/config.toml`, same `atomic_write` (temp-file + rename) pattern as Zerkalo's `config.rs`/`error.rs`.
 
-## Git Sync (once implemented, v0.1.0 milestone)
+## Git Sync
 
 Lifted from Zerkalo's `git_sync.rs`/`github_auth.rs`/`secret_store.rs` — **git ops shell out to the `git` CLI** (via `flatpak-spawn --host` when sandboxed), not git2, matching what Zerkalo's code actually does (its own CLAUDE.md's claim to the contrary is stale — see Zerkalo's `git_sync.rs`). git2 is only used for local repo discovery/init/identity. Iskra needs its own GitHub OAuth App client ID — do not reuse Zerkalo's or Rubric's.
 

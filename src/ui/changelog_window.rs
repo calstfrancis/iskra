@@ -9,8 +9,57 @@ use gtk4::{Box as GtkBox, Label, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
+
+/// The current version's entry, flattened to `"Section: bullet"` strings for
+/// the welcome window's What's New list. Falls back to the topmost entry when
+/// no heading matches — dev builds update one entry in place (per CLAUDE.md),
+/// so `0.4.0-dev3`'s version can outrun a heading still reading `0.4.0-dev2`.
+pub fn whats_new_bullets(version: &str) -> Vec<String> {
+    let mut best: Vec<String> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+    let mut section = String::new();
+    let mut in_entry = false;
+    let mut matched = false;
+
+    for line in CHANGELOG.lines() {
+        let trimmed = line.trim();
+        if let Some(inner) = trimmed.strip_prefix("## [") {
+            if in_entry {
+                if matched {
+                    return current;
+                }
+                if best.is_empty() {
+                    best = std::mem::take(&mut current);
+                }
+            }
+            current = Vec::new();
+            section.clear();
+            in_entry = true;
+            matched = inner.split_once(']').map(|(v, _)| v) == Some(version);
+        } else if let Some(text) = trimmed.strip_prefix("### ") {
+            section = text.to_string();
+        } else if let Some(content) = trimmed.strip_prefix("- ") {
+            if in_entry {
+                current.push(if section.is_empty() {
+                    content.to_string()
+                } else {
+                    format!("{section}: {content}")
+                });
+            }
+        }
+    }
+
+    if matched {
+        return current;
+    }
+    if best.is_empty() {
+        best = current;
+    }
+    best
+}
+
 pub fn show_changelog(parent: &impl IsA<gtk4::Window>) {
-    const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
     const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
     let win = adw::Window::new();
@@ -119,7 +168,7 @@ fn changelog_bullet(text: &str) -> GtkBox {
     row
 }
 
-fn md_inline_to_pango(s: &str) -> String {
+pub fn md_inline_to_pango(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 16);
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
@@ -181,4 +230,44 @@ fn md_inline_to_pango(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whats_new_prefixes_bullets_with_their_section() {
+        let bullets = whats_new_bullets(env!("CARGO_PKG_VERSION"));
+        assert!(!bullets.is_empty());
+        assert!(bullets.iter().all(|b| b.contains(": ")));
+    }
+
+    #[test]
+    fn whats_new_falls_back_to_topmost_entry_for_an_unlisted_version() {
+        let top = whats_new_bullets("0.0.0-nonexistent");
+        let first_heading = CHANGELOG
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("## ["))
+            .and_then(|i| i.split_once(']'))
+            .map(|(v, _)| v.to_string())
+            .expect("CHANGELOG has at least one version heading");
+        assert_eq!(top, whats_new_bullets(&first_heading));
+    }
+
+    #[test]
+    fn whats_new_stops_at_the_next_version_heading() {
+        let mut headings = CHANGELOG
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("## ["))
+            .filter_map(|i| i.split_once(']'))
+            .map(|(v, _)| v.to_string());
+        let first = headings.next().expect("at least one heading");
+        let second = headings.next().expect("at least two headings");
+        let a = whats_new_bullets(&first);
+        let b = whats_new_bullets(&second);
+        assert!(!a.is_empty() && !b.is_empty());
+        assert!(a.iter().all(|x| !b.contains(x)) || a != b);
+        assert_ne!(a, b);
+    }
 }

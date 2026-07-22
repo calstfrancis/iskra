@@ -1,5 +1,6 @@
-//! A single movement card: header (name, drag grabber, collapse triangle,
-//! duplicate, delete) wrapping a `Revealer`-hidden ideas box. The ideas box
+//! A single movement card: header (name, collapse triangle, a "⋮" menu of
+//! occasional actions, drag grabber) wrapping a `Revealer`-hidden ideas box.
+//! The ideas box
 //! is identified by the `.movement-ideas-box` CSS class (see
 //! `ui::dnd::movement_ideas_box`) so `dnd.rs` can locate it purely from the
 //! widget tree without a second parallel bookkeeping structure.
@@ -38,6 +39,7 @@ pub fn build_movement_card(
     selected: Rc<RefCell<HashSet<String>>>,
     on_delete_selected: impl Fn() + 'static,
     on_copy_to_sermon: impl Fn() + 'static,
+    on_demote: impl Fn() + 'static,
 ) -> MovementCardWidgets {
     let root = GtkBox::new(Orientation::Vertical, 2);
     root.add_css_class("movement-card");
@@ -85,30 +87,45 @@ pub fn build_movement_card(
     }));
     header.append(&collapse_btn);
 
-    let duplicate_btn = Button::from_icon_name("edit-copy-symbolic");
-    duplicate_btn.add_css_class("flat");
-    duplicate_btn.add_css_class("movement-header-icon");
-    duplicate_btn.set_tooltip_text(Some("Duplicate movement"));
-    header.append(&duplicate_btn);
-
-    let merge_up_btn = Button::from_icon_name("go-up-symbolic");
-    merge_up_btn.add_css_class("flat");
-    merge_up_btn.add_css_class("movement-header-icon");
-    merge_up_btn.set_tooltip_text(Some("Merge with movement above"));
+    // Duplicate/merge/copy-to/delete are all occasional actions. Inline they
+    // read as a wall of five identical grey icons on every card; behind one
+    // "⋮" they get real labels and stop competing with the movement's name.
+    let duplicate_btn = menu_row("Duplicate movement", None);
+    let merge_up_btn = menu_row("Merge with movement above", None);
     merge_up_btn.set_sensitive(!is_first);
-    header.append(&merge_up_btn);
+    let copy_to_btn = menu_row("Copy to another sermon…", None);
+    // Deliberately worded apart from "Merge with movement above": that one
+    // discards this movement's name, this one keeps it as an idea.
+    let demote_btn = menu_row("Fold into movement above, keeping name", None);
+    demote_btn.set_sensitive(!is_first);
+    let delete_btn = menu_row("Delete movement", Some("Ctrl+Z to undo"));
+    delete_btn.add_css_class("movement-menu-destructive");
 
-    let copy_to_btn = Button::from_icon_name("send-to-symbolic");
-    copy_to_btn.add_css_class("flat");
-    copy_to_btn.add_css_class("movement-header-icon");
-    copy_to_btn.set_tooltip_text(Some("Copy movement to another sermon…"));
-    header.append(&copy_to_btn);
+    let menu_box = GtkBox::new(Orientation::Vertical, 0);
+    menu_box.add_css_class("movement-menu");
+    menu_box.append(&duplicate_btn);
+    menu_box.append(&merge_up_btn);
+    menu_box.append(&demote_btn);
+    menu_box.append(&copy_to_btn);
+    menu_box.append(&gtk4::Separator::new(Orientation::Horizontal));
+    menu_box.append(&delete_btn);
 
-    let delete_btn = Button::from_icon_name("user-trash-symbolic");
-    delete_btn.add_css_class("flat");
-    delete_btn.add_css_class("idea-delete");
-    delete_btn.set_tooltip_text(Some("Delete movement (Ctrl+Z to undo)"));
-    header.append(&delete_btn);
+    let menu_popover = gtk4::Popover::new();
+    menu_popover.set_child(Some(&menu_box));
+    menu_popover.add_css_class("menu");
+
+    let menu_btn = gtk4::MenuButton::new();
+    menu_btn.set_icon_name("view-more-symbolic");
+    menu_btn.add_css_class("flat");
+    menu_btn.add_css_class("movement-header-icon");
+    menu_btn.set_tooltip_text(Some("More movement actions"));
+    menu_btn.set_popover(Some(&menu_popover));
+    header.append(&menu_btn);
+
+    for btn in [&duplicate_btn, &merge_up_btn, &copy_to_btn, &demote_btn, &delete_btn] {
+        let popover = menu_popover.clone();
+        btn.connect_clicked(move |_| popover.popdown());
+    }
 
     let grabber = dnd::drag_grabber("Drag to reorder movement");
     grabber.remove_css_class("idea-grabber");
@@ -329,6 +346,7 @@ pub fn build_movement_card(
     delete_btn.connect_clicked(move |_| on_delete());
     merge_up_btn.connect_clicked(move |_| on_merge_up());
     copy_to_btn.connect_clicked(move |_| on_copy_to_sermon());
+    demote_btn.connect_clicked(move |_| on_demote());
 
     let payload = format!("{}{}", dnd::MOVEMENT_PAYLOAD_PREFIX, movement.id);
     dnd::setup_drag_source(&grabber, &root, move || payload.clone(), drag_active);
@@ -339,4 +357,25 @@ pub fn build_movement_card(
         name_entry,
         collapse_btn,
     }
+}
+
+fn menu_row(label: &str, hint: Option<&str>) -> Button {
+    let row = GtkBox::new(Orientation::Horizontal, 12);
+    let lbl = Label::new(Some(label));
+    lbl.set_xalign(0.0);
+    lbl.set_hexpand(true);
+    lbl.set_halign(gtk4::Align::Start);
+    row.append(&lbl);
+    if let Some(hint) = hint {
+        let hint_lbl = Label::new(Some(hint));
+        hint_lbl.add_css_class("dim-label");
+        hint_lbl.add_css_class("caption");
+        hint_lbl.set_halign(gtk4::Align::End);
+        row.append(&hint_lbl);
+    }
+    let btn = Button::new();
+    btn.set_child(Some(&row));
+    btn.add_css_class("flat");
+    btn.add_css_class("movement-menu-row");
+    btn
 }

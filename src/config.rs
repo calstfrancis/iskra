@@ -54,6 +54,15 @@ pub struct Config {
     /// toggle reveals the picker for the (rare) case of switching.
     #[serde(default = "default_true")]
     pub lectionary_simple_mode: bool,
+    /// Focus Mode: hides the lectionary sidebar and the status bar's tag
+    /// groups for distraction-free writing. Distinct from Simple Mode, which
+    /// hides one advanced control without touching the layout.
+    #[serde(default)]
+    pub focus_mode: bool,
+    /// Deleted ideas/movements kept for the "Recently deleted" tray, persisted
+    /// so the safety net survives a restart.
+    #[serde(default)]
+    pub recent_deletions: Vec<crate::model::DeletedRecord>,
 }
 
 fn default_work_dir() -> PathBuf {
@@ -99,6 +108,8 @@ impl Default for Config {
             selected_lectionary: crate::lectionary::LectionaryKind::default(),
             rcl_track: crate::lectionary::RclTrack::default(),
             lectionary_simple_mode: true,
+            focus_mode: false,
+            recent_deletions: Vec::new(),
         }
     }
 }

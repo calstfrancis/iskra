@@ -1,57 +1,48 @@
-//! Bottom status bar: sermon-level tag chips (scripture "s." tags and theme
-//! "t." tags — distinct from the per-idea idea/part tags on each idea row,
-//! see Plans/iskra-kickoff-prompt.md §4.6) and the version indicator on the
-//! far right, which opens the changelog window.
+//! Bottom status bar: sermon-level Scripture and Theme tag chips (distinct
+//! from the per-idea idea/part tags on each idea row), the save/sync state,
+//! the "Recently deleted" tray, the Simple/Focus mode toggles, and the
+//! version indicator on the far right, which opens the changelog window.
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Button, Entry, Image, Label, MenuButton, Orientation, Paned, Popover, ScrolledWindow, Separator};
 
 use crate::commands::{Cmd, SermonTagKind};
-use crate::model::{Idea, Movement, Sermon};
+use crate::model::Sermon;
 use crate::state::AppState;
 use crate::ui::editor::ApplyFn;
 
 const MAX_RECENT_DELETIONS: usize = 20;
 
-/// One deleted idea or movement, kept around for the "Recently deleted"
-/// tray — a session-scoped safety net alongside undo (never persisted, lost
-/// on quit), for the case of noticing a delete several edits later, where
-/// plain Ctrl+Z would have to unwind everything since. Carries the same
-/// data `Cmd::DeleteIdea`/`Cmd::DeleteMovement` already carry for their own
-/// undo inversion (see `commands.rs`), reused here rather than duplicated.
-pub enum DeletedEntry {
-    Idea { movement: usize, index: usize, idea: Idea },
-    Movement { at: usize, movement: Movement },
-}
-
-impl DeletedEntry {
-    fn label(&self) -> String {
-        match self {
-            DeletedEntry::Idea { idea, .. } if !idea.text.is_empty() => idea.text.clone(),
-            DeletedEntry::Idea { .. } => "(untitled idea)".to_string(),
-            DeletedEntry::Movement { movement, .. } if !movement.name.is_empty() => {
-                format!("Movement: {}", movement.name)
-            }
-            DeletedEntry::Movement { .. } => "(untitled movement)".to_string(),
-        }
-    }
-}
+/// One deleted idea or movement, kept for the "Recently deleted" tray — a
+/// safety net alongside undo, for the case of noticing a delete several edits
+/// later, where plain Ctrl+Z would have to unwind everything since. Carries
+/// the same data `Cmd::DeleteIdea`/`Cmd::DeleteMovement` already carry for
+/// their own undo inversion (see `commands.rs`), reused rather than
+/// duplicated. Persisted in the config (`model::DeletedRecord`) so the net
+/// survives a restart, and tagged with the sermon it came from so restoring
+/// into a different sermon can't happen.
+pub use crate::model::DeletedRecord as DeletedEntry;
 
 pub struct StatusBar {
     pub root: GtkBox,
     pub version_btn: Button,
     pub simple_toggle: Button,
+    pub focus_toggle: Button,
+    pub sync_status_btn: Button,
+    tags_paned: Paned,
     s_tags_box: GtkBox,
     t_tags_box: GtkBox,
     saved_label: Label,
     recent_btn: MenuButton,
     recent_popover: Popover,
     recent_list: GtkBox,
-    recent_deletions: RefCell<VecDeque<DeletedEntry>>,
+    /// Indices into `config.recent_deletions` for the rows currently shown —
+    /// the tray only lists the open sermon's deletions, but the stored list
+    /// is global, so the displayed row number is not the stored position.
+    visible_deletions: RefCell<Vec<usize>>,
     apply: RefCell<Option<ApplyFn>>,
     state: RefCell<Option<Rc<RefCell<AppState>>>>,
 }
@@ -110,6 +101,18 @@ impl StatusBar {
         saved_label.add_css_class("caption");
         root.append(&saved_label);
 
+        // "Saved" only ever meant "written to disk" — the git backup could sit
+        // days behind it, silently, because commit-and-push is manual. This
+        // stays hidden when the work dir is clean and in sync, so it reads as
+        // an exception rather than routine chrome.
+        let sync_status_btn = Button::with_label("");
+        sync_status_btn.add_css_class("flat");
+        sync_status_btn.add_css_class("caption");
+        sync_status_btn.add_css_class("status-unpushed");
+        sync_status_btn.set_visible(false);
+        sync_status_btn.set_tooltip_text(Some("Commit & push to GitHub (Ctrl+Shift+G)"));
+        root.append(&sync_status_btn);
+
         let recent_btn = MenuButton::new();
         recent_btn.set_icon_name("edit-undo-symbolic");
         recent_btn.add_css_class("flat");
@@ -137,7 +140,18 @@ impl StatusBar {
         simple_toggle.set_tooltip_text(Some(
             "Simple Mode hides the lectionary/track picker — turn off to switch lectionaries",
         ));
+        simple_toggle.update_property(&[gtk4::accessible::Property::Label("Toggle simple mode")]);
         root.append(&simple_toggle);
+
+        let focus_toggle = Button::with_label("focus");
+        focus_toggle.add_css_class("flat");
+        focus_toggle.add_css_class("caption");
+        focus_toggle.add_css_class("status-toggle");
+        focus_toggle.set_tooltip_text(Some(
+            "Focus Mode hides the lectionary sidebar and tag groups for distraction-free writing (Ctrl+Shift+F)",
+        ));
+        focus_toggle.update_property(&[gtk4::accessible::Property::Label("Toggle focus mode")]);
+        root.append(&focus_toggle);
 
         let sep = Separator::new(Orientation::Vertical);
         sep.add_css_class("statusbar-sep");
@@ -154,13 +168,16 @@ impl StatusBar {
             root,
             version_btn,
             simple_toggle,
+            focus_toggle,
+            sync_status_btn,
+            tags_paned,
             s_tags_box,
             t_tags_box,
             saved_label,
             recent_btn,
             recent_popover,
             recent_list,
-            recent_deletions: RefCell::new(VecDeque::new()),
+            visible_deletions: RefCell::new(Vec::new()),
             apply: RefCell::new(None),
             state: RefCell::new(None),
         })
@@ -199,10 +216,29 @@ impl StatusBar {
 
     /// Bold when Simple Mode is on (picker hidden), regular when off.
     pub fn set_simple_mode(&self, on: bool) {
-        if on {
-            self.simple_toggle.add_css_class("status-toggle-on");
-        } else {
-            self.simple_toggle.remove_css_class("status-toggle-on");
+        set_status_toggle(&self.simple_toggle, on);
+    }
+
+    /// Bold when Focus Mode is on. GTK4 CSS has no `display: none`, so the
+    /// tag groups are hidden by visibility rather than by the window's
+    /// `.focus-mode` class — the widgets survive either way, which is the
+    /// point of the pattern.
+    pub fn set_focus_mode(&self, on: bool) {
+        set_status_toggle(&self.focus_toggle, on);
+        self.tags_paned.set_visible(!on);
+    }
+
+    /// Shows "N to push" when the backup repo has uncommitted or unpushed
+    /// work, and hides itself entirely when everything is in sync. `None`
+    /// means sync isn't set up at all, which is also nothing to report.
+    pub fn set_pending_sync(&self, pending: Option<usize>) {
+        match pending {
+            Some(n) if n > 0 => {
+                self.sync_status_btn
+                    .set_label(&format!("{n} to push", n = n));
+                self.sync_status_btn.set_visible(true);
+            }
+            _ => self.sync_status_btn.set_visible(false),
         }
     }
 
@@ -213,26 +249,49 @@ impl StatusBar {
         if entries.is_empty() {
             return;
         }
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
         {
-            let mut list = self.recent_deletions.borrow_mut();
+            let mut st = state.borrow_mut();
             for entry in entries {
-                list.push_front(entry);
+                st.config.recent_deletions.insert(0, entry);
             }
-            while list.len() > MAX_RECENT_DELETIONS {
-                list.pop_back();
-            }
+            st.config.recent_deletions.truncate(MAX_RECENT_DELETIONS);
         }
+        let _ = state.borrow().config.save();
         self.refresh_recent_list();
     }
 
-    fn refresh_recent_list(self: &Rc<Self>) {
+    /// Rebuilds the tray for the open sermon. Also called on sermon switch,
+    /// since the stored list spans every sermon but the tray only ever offers
+    /// the current one's deletions.
+    pub fn refresh_recent_list(self: &Rc<Self>) {
         while let Some(child) = self.recent_list.first_child() {
             self.recent_list.remove(&child);
         }
-        let count = self.recent_deletions.borrow().len();
-        self.recent_btn.set_visible(count > 0);
-        for idx in 0..count {
-            let label_text = self.recent_deletions.borrow()[idx].label();
+        let Some(state) = self.state.borrow().clone() else {
+            self.recent_btn.set_visible(false);
+            return;
+        };
+        let (rows, sermon_id) = {
+            let st = state.borrow();
+            let sermon_id = st.sermon.id.clone();
+            let rows: Vec<(usize, String)> = st
+                .config
+                .recent_deletions
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.sermon_id() == sermon_id)
+                .map(|(i, r)| (i, r.label()))
+                .collect();
+            (rows, sermon_id)
+        };
+        let _ = sermon_id;
+        *self.visible_deletions.borrow_mut() = rows.iter().map(|(i, _)| *i).collect();
+        self.recent_btn.set_visible(!rows.is_empty());
+        for (idx, (_, label_text)) in rows.iter().enumerate() {
+            let label_text = label_text.clone();
             let row = GtkBox::new(Orientation::Horizontal, 6);
             let label = Label::new(Some(&label_text));
             label.set_xalign(0.0);
@@ -259,17 +318,21 @@ impl StatusBar {
     /// their own (see `commands.rs::Cmd::apply_to`), so an un-clamped
     /// restore of a stale entry could panic instead of just landing
     /// somewhere slightly different.
-    fn restore_deletion(self: &Rc<Self>, idx: usize) {
+    fn restore_deletion(self: &Rc<Self>, row: usize) {
         let (Some(apply), Some(state)) = (self.apply.borrow().clone(), self.state.borrow().clone()) else {
             return;
         };
+        let Some(&idx) = self.visible_deletions.borrow().get(row) else {
+            return;
+        };
         let entry = {
-            let mut list = self.recent_deletions.borrow_mut();
-            if idx >= list.len() {
+            let mut st = state.borrow_mut();
+            if idx >= st.config.recent_deletions.len() {
                 return;
             }
-            list.remove(idx)
+            Some(st.config.recent_deletions.remove(idx))
         };
+        let _ = state.borrow().config.save();
         if let Some(entry) = entry {
             let movements_len = state.borrow().sermon.movements.len();
             let cmd = match entry {
@@ -280,7 +343,7 @@ impl StatusBar {
                     self.recent_popover.popdown();
                     return;
                 }
-                DeletedEntry::Idea { movement, index, idea } => {
+                DeletedEntry::Idea { movement, index, idea, .. } => {
                     let movement = movement.min(movements_len - 1);
                     let idea_count = state
                         .borrow()
@@ -295,7 +358,7 @@ impl StatusBar {
                         idea,
                     }
                 }
-                DeletedEntry::Movement { at, movement } => Cmd::InsertMovement {
+                DeletedEntry::Movement { at, movement, .. } => Cmd::InsertMovement {
                     at: at.min(movements_len),
                     movement,
                 },
@@ -431,4 +494,21 @@ fn rebuild_tag_group(container: &GtkBox, tags: &[String], kind: SermonTagKind, a
     }
 
     container.append(&add_btn);
+}
+
+/// The house convention for status-bar toggles: state is carried by font
+/// weight alone (`.status-toggle-on`), which is invisible to a screen
+/// reader — so the accessible pressed state has to be set alongside it.
+fn set_status_toggle(btn: &Button, on: bool) {
+    if on {
+        btn.add_css_class("status-toggle-on");
+    } else {
+        btn.remove_css_class("status-toggle-on");
+    }
+    let pressed = if on {
+        gtk4::AccessibleTristate::True
+    } else {
+        gtk4::AccessibleTristate::False
+    };
+    btn.update_state(&[gtk4::accessible::State::Pressed(pressed)]);
 }

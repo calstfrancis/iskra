@@ -43,6 +43,39 @@ impl LibraryIndex {
             .collect()
     }
 
+    /// For each scripture tag on `current`, the other sermons that also carry
+    /// it — newest first, undated last. Tags nobody else has preached are
+    /// omitted entirely, so an empty result means "nothing here before".
+    ///
+    /// Scripture only, not themes: a repeated theme is ordinary, a repeated
+    /// passage is the thing a preacher wants to be reminded of. Same
+    /// reasoning as the toast in `app_window::note_past_sermon_reuse`, which
+    /// this panel is the browsable form of.
+    pub fn preached_before<'a>(
+        &'a self,
+        current: &Sermon,
+    ) -> Vec<(String, Vec<&'a (PathBuf, Sermon)>)> {
+        let mut out = Vec::new();
+        for tag in &current.s_tags {
+            let mut matches: Vec<&(PathBuf, Sermon)> = self
+                .sermons
+                .iter()
+                .filter(|(_, s)| s.id != current.id && s.s_tags.iter().any(|t| t == tag))
+                .collect();
+            if matches.is_empty() {
+                continue;
+            }
+            matches.sort_by(|(_, a), (_, b)| match (a.planned_date, b.planned_date) {
+                (Some(x), Some(y)) => y.cmp(&x),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.display_title().cmp(b.display_title()),
+            });
+            out.push((tag.clone(), matches));
+        }
+        out
+    }
+
     /// Series names in use, with occurrence counts, for the library sidebar.
     pub fn series_census(&self) -> BTreeMap<String, usize> {
         census(self.sermons.iter().filter_map(|(_, s)| s.series.as_ref()))
@@ -161,6 +194,63 @@ mod tests {
         m2.ideas.push(idea2);
         b.movements.push(m2);
         storage::save_sermon(&storage::new_sermon_path(dir, &b), &b).unwrap();
+    }
+
+    #[test]
+    fn preached_before_lists_other_sermons_sharing_a_scripture_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        seeded(dir.path());
+        let idx = LibraryIndex::scan(dir.path());
+        let mut current = Sermon::new();
+        current.title = "New take on Luke 13".into();
+        current.s_tags = vec!["Luke 13".into(), "John 1".into()];
+        let found = idx.preached_before(&current);
+        assert_eq!(found.len(), 1, "only the shared tag is listed");
+        assert_eq!(found[0].0, "Luke 13");
+        assert_eq!(found[0].1.len(), 1);
+        assert_eq!(found[0].1[0].1.title, "Fruit in Season");
+    }
+
+    #[test]
+    fn preached_before_excludes_the_open_sermon_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        seeded(dir.path());
+        let idx = LibraryIndex::scan(dir.path());
+        let existing = idx
+            .sermons
+            .iter()
+            .find(|(_, s)| s.title == "Fruit in Season")
+            .map(|(_, s)| s.clone())
+            .unwrap();
+        assert!(idx.preached_before(&existing).is_empty());
+    }
+
+    #[test]
+    fn preached_before_orders_dated_sermons_newest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut older = Sermon::new();
+        older.title = "Older".into();
+        older.s_tags = vec!["Mark 4".into()];
+        older.planned_date = chrono::NaiveDate::from_ymd_opt(2020, 1, 1);
+        storage::save_sermon(&storage::new_sermon_path(dir.path(), &older), &older).unwrap();
+
+        let mut newer = Sermon::new();
+        newer.title = "Newer".into();
+        newer.s_tags = vec!["Mark 4".into()];
+        newer.planned_date = chrono::NaiveDate::from_ymd_opt(2024, 1, 1);
+        storage::save_sermon(&storage::new_sermon_path(dir.path(), &newer), &newer).unwrap();
+
+        let mut undated = Sermon::new();
+        undated.title = "Undated".into();
+        undated.s_tags = vec!["Mark 4".into()];
+        storage::save_sermon(&storage::new_sermon_path(dir.path(), &undated), &undated).unwrap();
+
+        let idx = LibraryIndex::scan(dir.path());
+        let mut current = Sermon::new();
+        current.s_tags = vec!["Mark 4".into()];
+        let found = idx.preached_before(&current);
+        let titles: Vec<_> = found[0].1.iter().map(|(_, s)| s.title.as_str()).collect();
+        assert_eq!(titles, vec!["Newer", "Older", "Undated"]);
     }
 
     #[test]

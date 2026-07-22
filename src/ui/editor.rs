@@ -34,6 +34,10 @@ pub struct Editor {
     selected: Rc<RefCell<HashSet<String>>>,
     last_selected: Rc<RefCell<Option<String>>>,
     active_tag_filter: Rc<RefCell<Option<String>>>,
+    /// Last idea entry to take focus. The command palette takes focus itself
+    /// when it opens, so a palette command acting on "the current idea" has
+    /// to consult this rather than asking GTK what's focused right now.
+    last_focused_idea: Rc<RefCell<Option<String>>>,
     on_copy_movement: RefCell<Option<Box<dyn Fn(Movement)>>>,
 }
 
@@ -60,12 +64,18 @@ impl Editor {
             selected: Rc::new(RefCell::new(HashSet::new())),
             last_selected: Rc::new(RefCell::new(None)),
             active_tag_filter: Rc::new(RefCell::new(None)),
+            last_focused_idea: Rc::new(RefCell::new(None)),
             on_copy_movement: RefCell::new(None),
         })
     }
 
     pub fn widget(&self) -> &ScrolledWindow {
         &self.scroller
+    }
+
+    /// The idea the user was last editing, if it still exists.
+    pub fn focused_idea_id(&self) -> Option<String> {
+        self.last_focused_idea.borrow().clone()
     }
 
     /// Focuses the movement/idea row tagged with `widget_name() == name` (see
@@ -698,6 +708,22 @@ impl Editor {
                         }
                     }
                 },
+                {
+                    let id = movement.id.clone();
+                    let state = state.clone();
+                    let apply = apply.clone();
+                    move || {
+                        let cmd = {
+                            let st = state.borrow();
+                            st.sermon.find_movement(&id).and_then(|at| {
+                                crate::commands::demote_movement_to_idea(&st.sermon, at)
+                            })
+                        };
+                        if let Some(cmd) = cmd {
+                            apply(cmd);
+                        }
+                    }
+                },
             );
             card.root.set_widget_name(&format!("movement:{}", movement.id));
             card.name_entry.set_widget_name(&format!("movement-entry:{}", movement.id));
@@ -932,6 +958,25 @@ impl Editor {
                             rename_tag_everywhere(&state, &apply, TagKind::Part, old, new);
                         }
                     },
+                    {
+                        // Resolved from the id at click time, not from the
+                        // (m_idx, i) baked in at build time — a rebuild can
+                        // land between the two.
+                        let id = id.clone();
+                        let state = state.clone();
+                        let apply = apply.clone();
+                        move || {
+                            let cmd = {
+                                let st = state.borrow();
+                                st.sermon.find_idea(&id).and_then(|(m, i)| {
+                                    crate::commands::promote_idea_to_movement(&st.sermon, m, i)
+                                })
+                            };
+                            if let Some(cmd) = cmd {
+                                apply(cmd);
+                            }
+                        }
+                    },
                 );
                 dnd::setup_drag_source(
                     &row.grabber,
@@ -959,6 +1004,15 @@ impl Editor {
                 );
                 row.root.set_widget_name(&format!("idea:{id}"));
                 row.entry.set_widget_name(&format!("idea-entry:{id}"));
+                {
+                    let id = id.clone();
+                    let last_focused = self.last_focused_idea.clone();
+                    let focus_ctl = gtk4::EventControllerFocus::new();
+                    focus_ctl.connect_enter(move |_| {
+                        *last_focused.borrow_mut() = Some(id.clone());
+                    });
+                    row.entry.add_controller(focus_ctl);
+                }
                 if self.selected.borrow().contains(&id) {
                     row.root.add_css_class("idea-row-selected");
                 }

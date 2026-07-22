@@ -404,10 +404,171 @@ fn merge_into(top: &mut Cmd, next: &Cmd) {
     }
 }
 
+/// "This idea is actually its own section": the idea leaves its movement and
+/// becomes a new movement inserted directly below, named after the idea's
+/// text. Built entirely from existing commands, so undo/redo needs no new
+/// inversion logic.
+///
+/// An idea carrying notes or tags is kept as the new movement's first idea
+/// rather than discarded — its text is then duplicated in the movement name,
+/// which is the lesser evil against silently dropping notes. A bare idea
+/// (the common case) yields a clean empty movement.
+pub fn promote_idea_to_movement(sermon: &Sermon, movement: usize, index: usize) -> Option<Cmd> {
+    let idea = sermon.movements.get(movement)?.ideas.get(index)?.clone();
+    let carries_content = !idea.notes.trim().is_empty()
+        || !idea.idea_tag.trim().is_empty()
+        || !idea.part_tag.trim().is_empty();
+    let mut new_movement = Movement::new(movement + 1);
+    new_movement.name = idea.text.clone();
+    if carries_content {
+        new_movement.ideas.push(idea.clone());
+    }
+    Some(Cmd::Composite(vec![
+        Cmd::DeleteIdea {
+            movement,
+            index,
+            idea,
+        },
+        Cmd::InsertMovement {
+            at: movement + 1,
+            movement: new_movement,
+        },
+    ]))
+}
+
+/// The inverse shape: a movement folds into the one above it, its name
+/// becoming an idea and its own ideas following in order. Distinct from
+/// "merge with movement above", which discards the name entirely.
+///
+/// Returns `None` for the first movement — there's nothing above to fold into.
+pub fn demote_movement_to_idea(sermon: &Sermon, at: usize) -> Option<Cmd> {
+    if at == 0 {
+        return None;
+    }
+    let movement = sermon.movements.get(at)?.clone();
+    let target = at - 1;
+    let base = sermon.movements.get(target)?.ideas.len();
+
+    // DeleteMovement first: `target` sits above `at`, so removing `at` can't
+    // shift it, and every InsertIdea then indexes into the final shape.
+    let mut cmds = vec![Cmd::DeleteMovement {
+        at,
+        movement: movement.clone(),
+    }];
+    let mut next = base;
+    if !movement.name.trim().is_empty() {
+        let mut heading = Idea::new();
+        heading.text = movement.name.clone();
+        cmds.push(Cmd::InsertIdea {
+            movement: target,
+            index: next,
+            idea: heading,
+        });
+        next += 1;
+    }
+    for idea in movement.ideas {
+        cmds.push(Cmd::InsertIdea {
+            movement: target,
+            index: next,
+            idea,
+        });
+        next += 1;
+    }
+    Some(Cmd::Composite(cmds))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Movement;
+
+    fn sermon_two_movements() -> Sermon {
+        let mut s = Sermon::new();
+        s.movements.clear();
+        for (name, texts) in [("One", vec!["a", "b"]), ("Two", vec!["c"])] {
+            let mut m = Movement::new(0);
+            m.name = name.to_string();
+            m.ideas.clear();
+            for text in texts {
+                let mut i = Idea::new();
+                i.text = text.to_string();
+                m.ideas.push(i);
+            }
+            s.movements.push(m);
+        }
+        s
+    }
+
+    #[test]
+    fn promote_moves_the_idea_out_and_names_the_new_movement_after_it() {
+        let mut s = sermon_two_movements();
+        let cmd = promote_idea_to_movement(&s, 0, 1).expect("valid position");
+        cmd.apply_to(&mut s);
+        assert_eq!(s.movements.len(), 3);
+        assert_eq!(s.movements[0].ideas.len(), 1);
+        assert_eq!(s.movements[0].ideas[0].text, "a");
+        assert_eq!(s.movements[1].name, "b");
+        assert!(s.movements[1].ideas.is_empty());
+        assert_eq!(s.movements[2].name, "Two");
+    }
+
+    #[test]
+    fn promote_keeps_an_idea_that_carries_notes() {
+        let mut s = sermon_two_movements();
+        s.movements[0].ideas[1].notes = "worth keeping".to_string();
+        let cmd = promote_idea_to_movement(&s, 0, 1).expect("valid position");
+        cmd.apply_to(&mut s);
+        assert_eq!(s.movements[1].name, "b");
+        assert_eq!(s.movements[1].ideas.len(), 1);
+        assert_eq!(s.movements[1].ideas[0].notes, "worth keeping");
+    }
+
+    #[test]
+    fn promote_rejects_an_out_of_range_position() {
+        let s = sermon_two_movements();
+        assert!(promote_idea_to_movement(&s, 0, 9).is_none());
+        assert!(promote_idea_to_movement(&s, 9, 0).is_none());
+    }
+
+    #[test]
+    fn demote_folds_the_movement_into_the_one_above_name_first() {
+        let mut s = sermon_two_movements();
+        let cmd = demote_movement_to_idea(&s, 1).expect("not the first movement");
+        cmd.apply_to(&mut s);
+        assert_eq!(s.movements.len(), 1);
+        let texts: Vec<_> = s.movements[0].ideas.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts, vec!["a", "b", "Two", "c"]);
+    }
+
+    #[test]
+    fn demote_refuses_the_first_movement() {
+        let s = sermon_two_movements();
+        assert!(demote_movement_to_idea(&s, 0).is_none());
+    }
+
+    #[test]
+    fn promote_then_undo_restores_the_original_shape() {
+        let mut s = sermon_two_movements();
+        let before = s.clone();
+        let mut undo = UndoStack::new();
+        let cmd = promote_idea_to_movement(&s, 0, 1).expect("valid position");
+        undo.push_applying(&mut s, cmd);
+        assert_ne!(s, before);
+        assert!(undo.undo(&mut s));
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn demote_then_undo_restores_the_original_shape() {
+        let mut s = sermon_two_movements();
+        let before = s.clone();
+        let mut undo = UndoStack::new();
+        let cmd = demote_movement_to_idea(&s, 1).expect("not the first movement");
+        undo.push_applying(&mut s, cmd);
+        assert_ne!(s, before);
+        assert!(undo.undo(&mut s));
+        assert_eq!(s, before);
+    }
 
     fn sermon_with_one_idea() -> (Sermon, String) {
         let mut s = Sermon::new();

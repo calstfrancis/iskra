@@ -36,6 +36,20 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.4.0" date="2026-07-22">
+      <description>
+        <p>
+          Banked Ember — two more lectionaries alongside the RCL (Roman
+          Catholic Sunday and Narrative) with an RCL Track 2 option, a
+          quieter editor that fades per-row buttons in on hover and folds
+          each movement's occasional actions behind a single menu, Focus
+          Mode for distraction-free writing, promoting an idea into its own
+          movement, a "Preached Before" panel listing past sermons on the
+          same passage, an unpushed-work indicator in the status bar, and a
+          "Recently deleted" tray that now survives a restart.
+        </p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-07-19">
       <description>
         <p>
