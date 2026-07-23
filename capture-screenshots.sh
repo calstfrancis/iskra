@@ -54,6 +54,7 @@ fi
 
 DEMO_HOME=$(mktemp -d /tmp/iskra-demo-home.XXXXXX)
 OUT="screenshots/iskra-main.png"
+OUT_DARK="screenshots/iskra-main-dark.png"
 WINDOW_W=1200
 WINDOW_H=800
 
@@ -99,14 +100,63 @@ Xvfb ":$DISPLAY_NUM" -screen 0 "${WINDOW_W}x${WINDOW_H}x24" &
 XVFB_PID=$!
 sleep 2
 
-echo "==> Launching Iskra against demo data inside the isolated display"
-dbus-run-session -- env -u WAYLAND_DISPLAY GDK_BACKEND=x11 DISPLAY=":$DISPLAY_NUM" "./$BINARY" &
-APP_PID=$!
+export BINARY DISPLAY_NUM WINDOW_W WINDOW_H
 
-echo "==> Waiting for window to render"
-sleep 5
+# Capture the app once per colour scheme. libadwaita normally resolves
+# light/dark from the desktop's settings portal, which on this machine is
+# answered by a backend that ignores our isolated config and always reports
+# light. ADW_DISABLE_PORTAL=1 makes libadwaita read the GSettings
+# color-scheme key instead, and GSETTINGS_BACKEND=keyfile feeds it a value we
+# write into the throwaway config — so we can force either scheme
+# deterministically without touching the real desktop. (Iskra's own config
+# defaults to Theme::System, which follows this.)
+#
+# The whole launch+capture runs *inside* dbus-run-session so the private bus
+# (and the dbus-daemon it spawns) is torn down when the inner shell exits —
+# backgrounding dbus-run-session and killing it instead leaves an orphaned
+# daemon holding the script's stdout open.
+capture_scheme() {
+  local scheme="$1"
+  export OUTFILE="$2"
+  mkdir -p "$XDG_CONFIG_HOME/glib-2.0/settings"
+  cat > "$XDG_CONFIG_HOME/glib-2.0/settings/keyfile" <<KEYFILE
+[org/gnome/desktop/interface]
+color-scheme='$scheme'
+KEYFILE
 
-echo "==> Capturing screenshot"
-DISPLAY=":$DISPLAY_NUM" magick x:root -crop "${WINDOW_W}x${WINDOW_H}+0+0" +repage "$OUT"
+  echo "==> Capturing Iskra ($scheme) -> $OUTFILE"
+  dbus-run-session -- bash -c '
+    env -u WAYLAND_DISPLAY GDK_BACKEND=x11 ADW_DISABLE_PORTAL=1 GSETTINGS_BACKEND=keyfile \
+      DISPLAY=":$DISPLAY_NUM" "./$BINARY" &
+    app=$!
+    sleep 5
+    DISPLAY=":$DISPLAY_NUM" magick x:root -crop "${WINDOW_W}x${WINDOW_H}+0+0" +repage "$OUTFILE"
+    kill "$app" 2>/dev/null || true
+    wait "$app" 2>/dev/null || true
+  '
+}
 
-echo "Done. Wrote $OUT"
+capture_scheme default     "$OUT"
+capture_scheme prefer-dark "$OUT_DARK"
+
+echo "Done. Wrote $OUT and $OUT_DARK"
+
+# Publish web-ready copies into the personal website repo, one PNG + WebP per
+# scheme, named as the site expects (<slug>.png/.webp + <slug>-dark.png/.webp).
+# The capture crop already matches the site's image dimensions, so this is a
+# straight convert+copy — no resize. Override the destination with
+# WEBSITE_DIR=/path ./capture-screenshots.sh; if it doesn't exist the export is
+# skipped with a note rather than failing. The website is a separate repo —
+# commit and push it there yourself after reviewing the refreshed images.
+SLUG="iskra"
+WEBSITE_DIR="${WEBSITE_DIR:-$(dirname "$SCRIPT_DIR")/calstfrancis.github.io}"
+if [[ -d "$WEBSITE_DIR" ]]; then
+  echo "==> Publishing web images to $WEBSITE_DIR"
+  cp "$OUT"      "$WEBSITE_DIR/$SLUG.png"
+  cp "$OUT_DARK" "$WEBSITE_DIR/$SLUG-dark.png"
+  magick "$OUT"      -quality 80 "$WEBSITE_DIR/$SLUG.webp"
+  magick "$OUT_DARK" -quality 80 "$WEBSITE_DIR/$SLUG-dark.webp"
+  echo "    wrote $SLUG.{png,webp} and $SLUG-dark.{png,webp}"
+else
+  echo "NOTE: website dir not found ($WEBSITE_DIR) — skipping web export."
+fi
